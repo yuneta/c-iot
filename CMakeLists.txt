@@ -43,7 +43,7 @@ set (SRCS
     # Protocols
     src/c_prot_modbus_master.c
     src/c_prot_canopen.c
-    src/c_prot_gps.c
+    src/c_gps_sim7600.c
 
     # Mixin uv-gobj
     src/c_canbus0.c
@@ -60,7 +60,7 @@ set (HDRS
     # Protocols
     src/c_prot_modbus_master.h
     src/c_prot_canopen.h
-    src/c_prot_gps.h
+    src/c_gps_sim7600.h
 
     # Mixin uv-gobj
     src/c_canbus0.h

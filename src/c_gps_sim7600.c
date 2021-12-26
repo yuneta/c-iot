@@ -1,14 +1,14 @@
 /***********************************************************************
- *          C_PROT_GPS.C
- *          Prot_gps GClass
+ *          C_GPS_SIM7600.C
+ *          Gps_sim7600 GClass
  *
- *          Gps (NMEA) protocol
+ *          Gps SIM7600 protocol
  *
- *          Copyright (c) 2021 Niyamaka.
+ *          Copyright (c) 2022 Niyamaka.
  *          All Rights Reserved.
 ***********************************************************************/
 #include <string.h>
-#include "c_prot_gps.h"
+#include "c_gps_sim7600.h"
 
 /***************************************************************************
  *              Constants
@@ -275,12 +275,14 @@ PRIVATE int ac_timeout(hgobj gobj, const char *event, json_t *kw, hgobj src)
  *                          FSM
  ***************************************************************************/
 PRIVATE const EVENT input_events[] = {
+    // top input
+    // bottom input
     {"EV_RX_DATA",          0},
     {"EV_SEND_MESSAGE",     0},
     {"EV_CONNECTED",        0},
     {"EV_DISCONNECTED",     0},
-    {"EV_TX_READY",         0},
     {"EV_TIMEOUT",          0},
+    {"EV_TX_READY",         0},
     {"EV_STOPPED",          0},
     {NULL, 0}
 };
@@ -333,7 +335,7 @@ PRIVATE LMETHOD lmt[] = {
  *---------------------------------------------*/
 PRIVATE GCLASS _gclass = {
     0,  // base
-    GCLASS_PROT_GPS_NAME,     // CHANGE WITH each gclass
+    GCLASS_GPS_SIM7600_NAME,     // CHANGE WITH each gclass
     &fsm,
     {
         mt_create,
@@ -413,7 +415,7 @@ PRIVATE GCLASS _gclass = {
 /***************************************************************************
  *              Public access
  ***************************************************************************/
-PUBLIC GCLASS *gclass_prot_gps(void)
+PUBLIC GCLASS *gclass_gps_sim7600(void)
 {
     return &_gclass;
 }
