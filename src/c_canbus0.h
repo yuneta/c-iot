@@ -9,8 +9,7 @@
  ****************************************************************************/
 #pragma once
 
-#include <ginsfsm.h>
-#include "c_timer.h"
+#include <yuneta.h>
 
 #ifdef __cplusplus
 extern "C"{
