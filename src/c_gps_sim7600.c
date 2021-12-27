@@ -248,11 +248,12 @@ PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj 
         );
     }
 
-    GBUFFER *gbuf = gbuf_create(strlen(message), strlen(message), 0, 0);
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
     json_t *kw_send = json_pack("{s:I}",
         "gbuffer", (json_int_t)(size_t)gbuf
     );
     gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
 
     int ret = gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
 
