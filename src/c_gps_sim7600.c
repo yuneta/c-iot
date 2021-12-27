@@ -61,7 +61,7 @@ typedef struct _PRIVATE_DATA {
 
     BOOL inform_on_close;
 
-    hgobj gobj_serial;
+    hgobj gobj_bottom;
     hgobj timer;
 } PRIVATE_DATA;
 
@@ -90,16 +90,6 @@ PRIVATE void mt_create(hgobj gobj)
      */
     SET_PRIV(timeout_base,          gobj_read_int32_attr)
 
-    priv->gobj_serial = gobj_bottom_gobj(gobj);
-    if(!priv->gobj_serial) {
-        // Manual serial configuration
-        json_t *kw_serial = gobj_read_json_attr(gobj, "kw_serial");
-        json_incref(kw_serial);
-        priv->gobj_serial = gobj_create(gobj_name(gobj), GCLASS_SERIAL, kw_serial, gobj);
-        gobj_set_bottom_gobj(gobj, priv->gobj_serial);
-        gobj_write_str_attr(priv->gobj_serial, "tx_ready_event_name", 0);
-    }
-
     hgobj subscriber = (hgobj)gobj_read_pointer_attr(gobj, "subscriber");
     if(!subscriber)
         subscriber = gobj_parent(gobj);
@@ -120,9 +110,22 @@ PRIVATE int mt_start(hgobj gobj)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
+    priv->gobj_bottom = gobj_bottom_gobj(gobj);
+    if(!priv->gobj_bottom) {
+        // Manual serial configuration
+        json_t *kw_serial = gobj_read_json_attr(gobj, "kw_serial");
+        json_incref(kw_serial);
+        priv->gobj_bottom = gobj_create(gobj_name(gobj), GCLASS_SERIAL, kw_serial, gobj);
+        gobj_set_bottom_gobj(gobj, priv->gobj_bottom);
+        gobj_write_str_attr(priv->gobj_bottom, "tx_ready_event_name", 0);
+    }
+
     gobj_start(priv->timer);
     //set_timeout_periodic(priv->timer, priv->timeout_base);
-    gobj_start(priv->gobj_serial);
+
+    if(!gobj_is_running(priv->gobj_bottom)) {
+        gobj_start(priv->gobj_bottom);
+    }
 
     return 0;
 }
@@ -136,7 +139,7 @@ PRIVATE int mt_stop(hgobj gobj)
 
     clear_timeout(priv->timer);
     gobj_stop(priv->timer);
-    gobj_stop(priv->gobj_serial);
+    gobj_stop(priv->gobj_bottom);
     return 0;
 }
 
@@ -250,7 +253,7 @@ PRIVATE int ac_send_message(hgobj gobj, const char *event, json_t *kw, hgobj src
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 //     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
     // TODO
-    return gobj_send_event(priv->gobj_serial, "EV_TX_DATA", kw, gobj);
+    return gobj_send_event(priv->gobj_bottom, "EV_TX_DATA", kw, gobj);
 }
 
 /***************************************************************************
