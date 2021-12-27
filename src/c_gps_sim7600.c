@@ -26,6 +26,37 @@
 /***************************************************************************
  *          Data: config, public data, private data
  ***************************************************************************/
+PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_authzs(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+
+PRIVATE sdata_desc_t pm_help[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "cmd",          0,              0,          "command about you want help."),
+SDATAPM (ASN_UNSIGNED,  "level",        0,              0,          "command search level in childs"),
+SDATA_END()
+};
+PRIVATE sdata_desc_t pm_authzs[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "authz",        0,              0,          "permission to search"),
+SDATAPM (ASN_OCTET_STR, "service",      0,              0,          "Service where to search the permission. If empty print all service's permissions"),
+SDATA_END()
+};
+PRIVATE sdata_desc_t pm_send_message[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "message",      0,              0,          "message (AT command) to send to gps"),
+SDATA_END()
+};
+
+PRIVATE const char *a_help[] = {"h", "?", 0};
+
+PRIVATE sdata_desc_t command_table[] = {
+/*-CMD---type-----------name----------------alias---items-----------json_fn---------description---------- */
+SDATACM (ASN_SCHEMA,    "help",             a_help, pm_help,        cmd_help,       "Command's help"),
+SDATACM (ASN_SCHEMA,    "authzs",           0,      pm_authzs,      cmd_authzs,     "Authorization's help"),
+SDATACM (ASN_SCHEMA,    "send-message",     0,      pm_send_message,cmd_send_message,"Send command to gps"),
+SDATA_END()
+};
 
 /*---------------------------------------------*
  *      Attributes - order affect to oid's
@@ -50,6 +81,21 @@ enum {
 PRIVATE const trace_level_t s_user_trace_level[16] = {
 {"debug",        "Trace to debug"},
 {0, 0},
+};
+
+/*---------------------------------------------*
+ *      GClass authz levels
+ *---------------------------------------------*/
+PRIVATE sdata_desc_t pm_authz_sample[] = {
+/*-PM-----type--------------name----------------flag--------authpath--------description-- */
+SDATAPM0 (ASN_OCTET_STR,    "param sample",     0,          "",             "Param ..."),
+SDATA_END()
+};
+
+PRIVATE sdata_desc_t authz_table[] = {
+/*-AUTHZ-- type---------name------------flag----alias---items---------------description--*/
+SDATAAUTHZ (ASN_SCHEMA, "sample",       0,      0,      pm_authz_sample,    "Permission to ..."),
+SDATA_END()
 };
 
 /*---------------------------------------------*
@@ -148,6 +194,76 @@ PRIVATE int mt_stop(hgobj gobj)
  ***************************************************************************/
 PRIVATE void mt_destroy(hgobj gobj)
 {
+}
+
+
+
+
+            /***************************
+             *      Commands
+             ***************************/
+
+
+
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    KW_INCREF(kw);
+    json_t *jn_resp = gobj_build_cmds_doc(gobj, kw);
+    return msg_iev_build_webix(
+        gobj,
+        0,
+        jn_resp,
+        0,
+        0,
+        kw  // owned
+    );
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_authzs(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    return gobj_build_authzs_doc(gobj, cmd, kw, src);
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    const char *message = kw_get_str(kw, "message", "", 0);
+    if(empty_string(message)) {
+        return msg_iev_build_webix(
+            gobj,
+            -1,
+            json_sprintf("What message (AT command)?"),
+            0,
+            0,
+            kw  // owned
+        );
+    }
+
+    GBUFFER *gbuf = gbuf_create(strlen(message), strlen(message), 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+
+    int ret = gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+
+    return msg_iev_build_webix(
+        gobj,
+        ret,
+        0,
+        0,
+        0,
+        kw  // owned
+    );
 }
 
 
@@ -409,9 +525,9 @@ PRIVATE GCLASS _gclass = {
     lmt,
     tattr_desc,
     sizeof(PRIVATE_DATA),
-    0,  // acl
+    authz_table,
     s_user_trace_level,
-    0, // cmds
+    command_table,  // command_table
     0, // gcflag
 };
 
