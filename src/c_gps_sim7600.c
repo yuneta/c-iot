@@ -95,6 +95,7 @@ PRIVATE int send_set_cgpshor(hgobj gobj);
 PRIVATE int process_set_cgpshor(hgobj gobj, GBUFFER *gbuf);
 PRIVATE int send_cgnssinfo(hgobj gobj);
 PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int build_gps_message(hgobj gobj);
 
 /***************************************************************************
  *          Data: config, public data, private data
@@ -770,6 +771,25 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
         gobj_publish_event(gobj, "EV_ON_OPEN", 0);
     }
 
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            build_gps_message(gobj);
+            clear_timeout(priv->timer);
+            send_cgnssinfo(gobj);
+        }
+    }
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int build_gps_message(hgobj gobj)
+{
 /*
 
     strncpy(LatDD,RecMessage,2);
@@ -800,8 +820,6 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
     UTCTime[6] = '\0';
     printf("UTC time is %s\n",UTCTime);
 */
-
-    char *p = gbuf_cur_rd_pointer(gbuf);
 
     json_t *jn_gps_mesage = json_object();
 
