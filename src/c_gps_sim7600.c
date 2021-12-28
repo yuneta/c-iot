@@ -57,7 +57,7 @@
  */
 
 typedef enum {
-    WAIT_TIME,              // Wait some time so power on messages arrived (10 seconds)
+    WAIT_BOOT,              // Wait some time so power on messages arrived (10 seconds)
     WAIT_ATI,               // Get product information
     WAIT_CHECK_CGPS,        // Check if GPS is enabled
     WAIT_SET_CGPSAUTO,      // Set auto gps
@@ -67,7 +67,7 @@ typedef enum {
 } gps_state_t;
 
 PRIVATE const char *gps_state_names[] = {
-    "WAIT_TIME",
+    "WAIT_BOOT",
     "WAIT_ATI",
     "WAIT_CHECK_CGPS",
     "WAIT_SET_CGPSAUTO",
@@ -77,12 +77,24 @@ PRIVATE const char *gps_state_names[] = {
     0
 };
 
-#define GET_STATE_NAME(st) gps_state_names[st]
+#define STATE_NAME(_st_) gps_state_names[_st_]
 
 /***************************************************************************
  *              Prototypes
  ***************************************************************************/
-
+PRIVATE int reset_gps_machine(hgobj gobj);
+PRIVATE int send_ati(hgobj gobj);
+PRIVATE int process_ati(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int send_check_cgps(hgobj gobj);
+PRIVATE int process_check_cgps(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int send_set_cgpsauto(hgobj gobj);
+PRIVATE int process_set_cgpsauto(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int send_set_cgps(hgobj gobj);
+PRIVATE int process_set_cgps(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int send_set_cgpshor(hgobj gobj);
+PRIVATE int process_set_cgpshor(hgobj gobj, GBUFFER *gbuf);
+PRIVATE int send_cgnssinfo(hgobj gobj);
+PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf);
 
 /***************************************************************************
  *          Data: config, public data, private data
@@ -90,6 +102,8 @@ PRIVATE const char *gps_state_names[] = {
 PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 PRIVATE json_t *cmd_authzs(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_set_gnss_interval(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_set_accuracy(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 
 PRIVATE sdata_desc_t pm_help[] = {
 /*-PM----type-----------name------------flag------------default-----description---------- */
@@ -108,6 +122,16 @@ PRIVATE sdata_desc_t pm_send_message[] = {
 SDATAPM (ASN_OCTET_STR, "message",      0,              0,          "message (AT command) to send to gps"),
 SDATA_END()
 };
+PRIVATE sdata_desc_t pm_set_gnss_interval[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "gnss_interval", 0,             0,          "Interval in seconds of gnss data (0 to stop, 1-255 interval in seconds)"),
+SDATA_END()
+};
+PRIVATE sdata_desc_t pm_set_accuracy[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "accuracy",     0,              0,          "Accuracy (in meters 0-1800000)"),
+SDATA_END()
+};
 
 PRIVATE const char *a_help[] = {"h", "?", 0};
 
@@ -116,6 +140,8 @@ PRIVATE sdata_desc_t command_table[] = {
 SDATACM (ASN_SCHEMA,    "help",             a_help, pm_help,        cmd_help,       "Command's help"),
 SDATACM (ASN_SCHEMA,    "authzs",           0,      pm_authzs,      cmd_authzs,     "Authorization's help"),
 SDATACM (ASN_SCHEMA,    "send-message",     0,      pm_send_message,cmd_send_message,"Send command to gps"),
+SDATACM (ASN_SCHEMA,    "set-gnss-interval",0,      pm_set_gnss_interval,cmd_set_gnss_interval,"Set gnss data interval (in seconds 1-255)"),
+SDATACM (ASN_SCHEMA,    "set-accuracy",     0,      pm_set_accuracy,cmd_set_accuracy,"Set gps accuracy (in meters 0-1800000)"),
 SDATA_END()
 };
 
@@ -123,14 +149,19 @@ SDATA_END()
  *      Attributes - order affect to oid's
  *---------------------------------------------*/
 PRIVATE sdata_desc_t tattr_desc[] = {
+/*-ATTR-type------------name----------------flag----------------default-----description---------- */
 SDATA (ASN_OCTET_STR,   "manufacturer",     SDF_RD,             "",         "Info of gps"),
 SDATA (ASN_OCTET_STR,   "model",            SDF_RD,             "",         "Info of gps"),
 SDATA (ASN_OCTET_STR,   "revision",         SDF_RD,             "",         "Info of gps"),
 SDATA (ASN_OCTET_STR,   "imei",             SDF_RD,             "",         "Info of gps"),
 SDATA (ASN_JSON,        "kw_serial",        SDF_RD,             0,          "Kw to create serial bottom gobj"),
 SDATA (ASN_OCTET_STR,   "device",           SDF_RD,             "",         "interface device, ex: ttyUSB1"),
-SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0, "Connection state. Important filter!"),
-SDATA (ASN_INTEGER,     "timeout_base",     SDF_RD,             5*1000, "timeout base"),
+SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0,          "Connection state. Important filter!"),
+SDATA (ASN_INTEGER,     "timeout_boot",     SDF_RD,             10*1000,    "timeout waiting gps boot"),
+SDATA (ASN_INTEGER,     "timeout_resp",     SDF_RD,             5*1000,     "timeout waiting gps response"),
+SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 10,         "gps data periodic time interval"),
+SDATA (ASN_UNSIGNED,    "accuracy",         SDF_WR|SDF_PERSIST, 2,          "gps accuracy"),
+
 SDATA (ASN_POINTER,     "user_data",        0,  0, "user data"),
 SDATA (ASN_POINTER,     "user_data2",       0,  0, "more user data"),
 SDATA (ASN_POINTER,     "subscriber",       0,  0, "subscriber of output-events. Default if null is parent."),
@@ -168,7 +199,10 @@ SDATA_END()
  *---------------------------------------------*/
 typedef struct _PRIVATE_DATA {
     // Conf
-    int32_t timeout_base;
+    //int32_t timeout_base;
+
+    GBUFFER *gbuf_rx;
+    int gps_state;
 
     BOOL inform_on_close;
 
@@ -194,12 +228,13 @@ PRIVATE void mt_create(hgobj gobj)
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
     priv->timer = gobj_create(gobj_name(gobj), GCLASS_TIMER, 0, gobj);
+    priv->gbuf_rx = gbuf_create(1024, 1024, 0, 0);
 
     /*
      *  Do copy of heavy used parameters, for quick access.
      *  HACK The writable attributes must be repeated in mt_writing method.
      */
-    SET_PRIV(timeout_base,          gobj_read_int32_attr)
+    //SET_PRIV(timeout_base,          gobj_read_int32_attr)
 
     hgobj subscriber = (hgobj)gobj_read_pointer_attr(gobj, "subscriber");
     if(!subscriber)
@@ -231,12 +266,11 @@ PRIVATE int mt_start(hgobj gobj)
         gobj_write_str_attr(priv->gobj_bottom, "tx_ready_event_name", 0);
     }
 
-    gobj_start(priv->timer);
-    //set_timeout_periodic(priv->timer, priv->timeout_base);
-
     if(!gobj_is_running(priv->gobj_bottom)) {
         gobj_start(priv->gobj_bottom);
     }
+
+    gobj_start(priv->timer);
 
     return 0;
 }
@@ -259,6 +293,9 @@ PRIVATE int mt_stop(hgobj gobj)
  ***************************************************************************/
 PRIVATE void mt_destroy(hgobj gobj)
 {
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    GBUF_DESTROY(priv->gbuf_rx);
 }
 
 
@@ -332,12 +369,406 @@ PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj 
     );
 }
 
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_set_gnss_interval(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    int interval = kw_get_int(kw, "gnss_interval", 10, KW_WILD_NUMBER);
+
+    if(interval <= 0 || interval >= 255) {
+        return msg_iev_build_webix(
+            gobj,
+            -1,
+            json_sprintf("What interval? (0 to stop, 1-255 interval in seconds"),
+            0,
+            0,
+            kw  // owned
+        );
+    }
+
+    gobj_write_int32_attr(gobj, "gnss_interval", interval);
+    gobj_save_persistent_attrs(gobj, json_string("gnss_interval"));
+
+    gobj_send_event(priv->gobj_bottom, "EV_DROP", 0, gobj);
+
+    return msg_iev_build_webix(
+        gobj,
+        0,
+        json_sprintf("Set gnss interval to %d seconds", interval),
+        0,
+        0,
+        kw  // owned
+    );
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_set_accuracy(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    int accuracy = kw_get_int(kw, "accuracy", 2, KW_WILD_NUMBER);
+
+    if(accuracy <= 0 || accuracy >= 1800000) {
+        return msg_iev_build_webix(
+            gobj,
+            -1,
+            json_sprintf("What accuracy? (in meters 0-1800000)"),
+            0,
+            0,
+            kw  // owned
+        );
+    }
+
+    gobj_write_int32_attr(gobj, "accuracy", accuracy);
+    gobj_save_persistent_attrs(gobj, json_string("accuracy"));
+
+    gobj_send_event(priv->gobj_bottom, "EV_DROP", 0, gobj);
+
+    return msg_iev_build_webix(
+        gobj,
+        0,
+        json_sprintf("Set accuracy to %d meters", accuracy),
+        0,
+        0,
+        kw  // owned
+    );
+}
+
 
 
 
             /***************************
              *      Local Methods
              ***************************/
+
+
+
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int reset_gps_machine(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    set_timeout(priv->timer, gobj_read_int32_attr(gobj, "timeout_boot"));
+    priv->gps_state = WAIT_BOOT;
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_ati(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    const char *message = "ATI";
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_ATI;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+    Manufacturer: SIMCOM INCORPORATED
+    Model: SIMCOM_SIM7600E-H
+    Revision: SIM7600M22_V2.0.1
+    IMEI: 860147051346169
+    +GCAP: +CGSM,+DS,+ES
+ ***************************************************************************/
+PRIVATE int process_ati(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+    #define MANUFACTURER "Manufacturer: "
+    #define MODEL "Model: "
+    #define REVISION "Revision: "
+    #define IMEI "IMEI: "
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            char *line;
+            while((line = gbuf_getline(gbuf, '\n'))) {
+                if(strncmp(line, MANUFACTURER, strlen(MANUFACTURER))==0) {
+                    char *v = line + strlen(MANUFACTURER);
+                    left_justify(line);
+                    gobj_write_str_attr(gobj, "manufacturer", v);
+
+                } else if(strncmp(line, MODEL, strlen(MODEL))==0) {
+                    char *v = line + strlen(MODEL);
+                    left_justify(line);
+                    gobj_write_str_attr(gobj, "model", v);
+
+                } else if(strncmp(line, REVISION, strlen(REVISION))==0) {
+                    char *v = line + strlen(REVISION);
+                    left_justify(line);
+                    gobj_write_str_attr(gobj, "revision", v);
+
+                } else if(strncmp(line, IMEI, strlen(IMEI))==0) {
+                    char *v = line + strlen(IMEI);
+                    left_justify(line);
+                    gobj_write_str_attr(gobj, "imei", v);
+                }
+            }
+
+            if(!empty_string(gobj_read_str_attr(gobj, "imei"))) {
+                clear_timeout(priv->timer);
+                send_check_cgps(gobj);
+            } else {
+                log_error(0,
+                    "gobj",         "%s", gobj_full_name(gobj),
+                    "function",     "%s", __FUNCTION__,
+                    "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+                    "msg",          "%s", "NO IMEI",
+                    "state",        "%s", STATE_NAME(priv->gps_state),
+                    NULL
+                );
+            }
+        }
+    }
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_check_cgps(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    const char *message = "AT+CGPS?";
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_CHECK_CGPS;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+    +CGPS: 1,1
+
+    OK
+ ***************************************************************************/
+PRIVATE int process_check_cgps(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+    #define CGPS_ON  "+CGPS: 1"
+    #define CGPS_OFF "+CGPS: 0"
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            char *line;
+            while((line = gbuf_getline(gbuf, '\n'))) {
+                if(strncmp(line, CGPS_ON, strlen(CGPS_ON))==0) {
+                    clear_timeout(priv->timer);
+                    send_set_cgpshor(gobj);
+                } else if(strncmp(line, CGPS_OFF, strlen(CGPS_OFF))==0) {
+                    clear_timeout(priv->timer);
+                    send_set_cgpsauto(gobj);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_set_cgpsauto(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    const char *message = "AT+CGPSAUTO=1";
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_SET_CGPSAUTO;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int process_set_cgpsauto(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            clear_timeout(priv->timer);
+            send_set_cgps(gobj);
+        }
+    }
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_set_cgps(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    const char *message = "AT+CGPS=1,1";
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_SET_CGPS;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+    AT+CGPS=1,1
+    OK
+ ***************************************************************************/
+PRIVATE int process_set_cgps(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    #define ATCGPS_ON  "AT+CGPS=1,1"
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            char *line;
+            while((line = gbuf_getline(gbuf, '\n'))) {
+                if(strncmp(line, ATCGPS_ON, strlen(ATCGPS_ON))==0) {
+                    clear_timeout(priv->timer);
+                    send_set_cgpshor(gobj);
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_set_cgpshor(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    char message[80];
+
+    snprintf(message, sizeof(message), "AT+CGPSHOR=%d", gobj_read_uint32_attr(gobj, "accuracy"));
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_SET_CGPSHOR;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int process_set_cgpshor(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
+    int len = gbuf_leftbytes(gbuf);
+
+    if(len > 6) {
+        if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
+            clear_timeout(priv->timer);
+            send_cgnssinfo(gobj);
+        }
+    }
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_cgnssinfo(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    char message[80];
+
+    snprintf(message, sizeof(message), "AT+CGNSSINFO=%d", gobj_read_uint32_attr(gobj, "gnss_interval"));
+
+    GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
+    json_t *kw_send = json_pack("{s:I}",
+        "gbuffer", (json_int_t)(size_t)gbuf
+    );
+    gbuf_append_string(gbuf, message);
+    gbuf_append_string(gbuf, "\r\n");
+
+    priv->gps_state = WAIT_CGNSSINFO;
+
+    return gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    if(!priv->inform_on_close) {
+        gobj_write_bool_attr(gobj, "connected", TRUE);
+        priv->inform_on_close = TRUE;
+        gobj_publish_event(gobj, "EV_ON_OPEN", 0);
+    }
 
 /*
 
@@ -370,11 +801,8 @@ PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj 
     printf("UTC time is %s\n",UTCTime);
 */
 
-/***************************************************************************
- *  Build gps message
- ***************************************************************************/
-PRIVATE json_t *build_gps_message(hgobj gobj, GBUFFER *gbuf)
-{
+    char *p = gbuf_cur_rd_pointer(gbuf);
+
     json_t *jn_gps_mesage = json_object();
 
     /*----------------
@@ -417,7 +845,7 @@ PRIVATE json_t *build_gps_message(hgobj gobj, GBUFFER *gbuf)
      *----------------
      */
 
-    return jn_gps_mesage;
+    return gobj_publish_event(gobj, "EV_ON_MESSAGE", jn_gps_mesage);
 }
 
 
@@ -435,12 +863,7 @@ PRIVATE json_t *build_gps_message(hgobj gobj, GBUFFER *gbuf)
  ***************************************************************************/
 PRIVATE int ac_connected(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
-    PRIVATE_DATA *priv = gobj_priv_data(gobj);
-
-    gobj_write_bool_attr(gobj, "connected", TRUE);
-
-    priv->inform_on_close = TRUE;
-    gobj_publish_event(gobj, "EV_ON_OPEN", 0);
+    reset_gps_machine(gobj);
 
     KW_DECREF(kw);
     return 0;
@@ -452,6 +875,8 @@ PRIVATE int ac_connected(hgobj gobj, const char *event, json_t *kw, hgobj src)
 PRIVATE int ac_disconnected(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    clear_timeout(priv->timer);
 
     if(gobj_is_volatil(src)) {
         gobj_set_bottom_gobj(gobj, 0);
@@ -472,16 +897,75 @@ PRIVATE int ac_disconnected(hgobj gobj, const char *event, json_t *kw, hgobj src
  ***************************************************************************/
 PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
-//     PRIVATE_DATA *priv = gobj_priv_data(gobj);
-
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
 
-    char *p = gbuf_cur_rd_pointer(gbuf);
-    // TODO
-    //gobj_publish_event(gobj, "EV_ON_MESSAGE", kw);
+    if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
+        char *p = gbuf_cur_rd_pointer(gbuf);
+        trace_msg("<✅✅✅✅✅✅✅✅ %s %s %s", STATE_NAME(priv->gps_state), gobj_short_name(gobj), p);
+    }
+
+    gbuf_append_gbuf(priv->gbuf_rx, gbuf);
+
+    switch(priv->gps_state) {
+    case WAIT_BOOT:             // Wait some time so power on messages arrived (10 seconds)
+        // Ignore +CPIN: READY, SMS DONE, PB DONE
+        break;
+    case WAIT_ATI:              // Get product information
+        process_ati(gobj, priv->gbuf_rx);
+        break;
+    case WAIT_CHECK_CGPS:       // Check if GPS is enabled
+        process_check_cgps(gobj, priv->gbuf_rx);
+        break;
+    case WAIT_SET_CGPSAUTO:     // Set auto gps
+        process_set_cgpsauto(gobj, priv->gbuf_rx);
+        break;
+    case WAIT_SET_CGPS:         // Enable gps
+        process_set_cgps(gobj, priv->gbuf_rx);
+        break;
+    case WAIT_SET_CGPSHOR:      // Configure positioning desired accuracy
+        process_set_cgpshor(gobj, priv->gbuf_rx);
+        break;
+    case WAIT_CGNSSINFO:        // Get GNSS information
+        process_cgnssinfo(gobj, priv->gbuf_rx);
+        break;
+    }
+
+    KW_DECREF(kw);
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int ac_timeout(hgobj gobj, const char *event, json_t *kw, hgobj src)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
     if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
-        trace_msg0("%s", p);
+        trace_msg("👉 %s %s -> timeout", STATE_NAME(priv->gps_state), gobj_short_name(gobj));
+    }
+
+    switch(priv->gps_state) {
+    case WAIT_BOOT:             // Wait some time so power on messages arrived (10 seconds)
+        send_ati(gobj);
+        break;
+    case WAIT_ATI:              // Get product information
+    case WAIT_CHECK_CGPS:       // Check if GPS is enabled
+    case WAIT_SET_CGPSAUTO:     // Set auto gps
+    case WAIT_SET_CGPS:         // Enable gps
+    case WAIT_SET_CGPSHOR:      // Configure positioning desired accuracy
+    case WAIT_CGNSSINFO:        // Get GNSS information
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+            "msg",          "%s", "timeout gps response",
+            "state",        "%s", STATE_NAME(priv->gps_state),
+            NULL
+        );
+        gobj_send_event(priv->gobj_bottom, "EV_DROP", 0, gobj);
+        break;
     }
 
     KW_DECREF(kw);
@@ -494,8 +978,16 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
 PRIVATE int ac_send_message(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
-//     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
-    // TODO
+
+    if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
+        GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
+        char *p = gbuf_cur_rd_pointer(gbuf);
+        trace_msg("👉👉👉👉👉👉👉👉> %s %s %s", STATE_NAME(priv->gps_state), gobj_short_name(gobj), p);
+    }
+
+    gbuf_clear(priv->gbuf_rx);
+    set_timeout(priv->timer, gobj_read_int32_attr(gobj, "timeout_resp"));
+
     return gobj_send_event(priv->gobj_bottom, "EV_TX_DATA", kw, gobj);
 }
 
@@ -503,15 +995,6 @@ PRIVATE int ac_send_message(hgobj gobj, const char *event, json_t *kw, hgobj src
  *
  ***************************************************************************/
 PRIVATE int ac_transmit_ready(hgobj gobj, const char *event, json_t *kw, hgobj src)
-{
-    KW_DECREF(kw);
-    return 0;
-}
-
-/***************************************************************************
- *
- ***************************************************************************/
-PRIVATE int ac_timeout(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
     KW_DECREF(kw);
     return 0;
