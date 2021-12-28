@@ -13,22 +13,71 @@
 /***************************************************************************
  *              Constants
  ***************************************************************************/
-/*
-    On connected wait:
-        "+CPIN: READY\r\n"
-        "SMS DONE\r\n"
-        "PB DONE\r\n"
- */
-
-typedef enum {
-    WAIT_AT,
-    WAIT_CHECK_AT_CGPS,
-    WAIT_SET_AT_CGPSAUTO
-} gps_state_t;
 
 /***************************************************************************
  *              Structures
  ***************************************************************************/
+/*
+    On power on of SIM7600 these messages arrived:
+        "+CPIN: READY\r\n"
+        "SMS DONE\r\n"
+        "PB DONE\r\n"
+
+    ATI
+        Manufacturer: SIMCOM INCORPORATED
+        Model: SIMCOM_SIM7600E-H
+        Revision: SIM7600M22_V2.0.1
+        IMEI: 860147051346169
+        +GCAP: +CGSM,+DS,+ES
+
+    AT+CGPSHOR=2
+
+    AT+CGNSSINFO
+        +CGNSSINFO: 2,04,01,00,4503.299486,N,00074.557903,E,281221,105825.0,33.3,0.0,,1.7,1.4,0.9
+
+    AT+CGNSSINFO=2 (receive each 2 seconds gnss info)
+
+    [<mode>],           Fix mode 2=2D fix 3=3D fix
+    [<GPS-SVs>],        GPS satellite valid numbers, scope: 00-12
+    [<GLONASS-SVs>],    GLONASS satellite valid numbers, scope: 00-12
+    [BEIDOU-SVs],       BEIDOU satellite valid numbers, scope: 00-12
+    [<lat>],            Latitude of current position. Output format is ddmm.mmmmmm
+    [<N/S>],            N/S Indicator, N=north or S=south
+    [<log>],            Longitude of current position. Output format is dddmm.mmmmmm
+    [<E/W>],            E/W Indicator, E=east or W=west
+    [<date>],           Date. Output format is ddmmyy
+    [<UTC-time>],       UTC Time. Output format is hhmmss.s
+    [<alt>],            MSL Altitude. Unit is meters.
+    [<speed>],          Speed Over Ground. Unit is knots.
+    [<course>],         Course. Degrees.
+    [<PDOP>],           Position Dilution Of Precision.
+    [HDOP],             Horizontal Dilution Of Precision.
+    [VDOP]              Vertical Dilution Of Precision.
+
+ */
+
+typedef enum {
+    WAIT_TIME,              // Wait some time so power on messages arrived (10 seconds)
+    WAIT_ATI,               // Get product information
+    WAIT_CHECK_CGPS,        // Check if GPS is enabled
+    WAIT_SET_CGPSAUTO,      // Set auto gps
+    WAIT_SET_CGPS,          // Enable gps
+    WAIT_SET_CGPSHOR,       // Configure positioning desired accuracy
+    WAIT_CGNSSINFO          // Get GNSS information
+} gps_state_t;
+
+PRIVATE const char *gps_state_names[] = {
+    "WAIT_TIME",
+    "WAIT_ATI",
+    "WAIT_CHECK_CGPS",
+    "WAIT_SET_CGPSAUTO",
+    "WAIT_SET_CGPS",
+    "WAIT_SET_CGPSHOR",
+    "WAIT_CGNSSINFO",
+    0
+};
+
+#define GET_STATE_NAME(st) gps_state_names[st]
 
 /***************************************************************************
  *              Prototypes
@@ -74,6 +123,10 @@ SDATA_END()
  *      Attributes - order affect to oid's
  *---------------------------------------------*/
 PRIVATE sdata_desc_t tattr_desc[] = {
+SDATA (ASN_OCTET_STR,   "manufacturer",     SDF_RD,             "",         "Info of gps"),
+SDATA (ASN_OCTET_STR,   "model",            SDF_RD,             "",         "Info of gps"),
+SDATA (ASN_OCTET_STR,   "revision",         SDF_RD,             "",         "Info of gps"),
+SDATA (ASN_OCTET_STR,   "imei",             SDF_RD,             "",         "Info of gps"),
 SDATA (ASN_JSON,        "kw_serial",        SDF_RD,             0,          "Kw to create serial bottom gobj"),
 SDATA (ASN_OCTET_STR,   "device",           SDF_RD,             "",         "interface device, ex: ttyUSB1"),
 SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0, "Connection state. Important filter!"),
@@ -88,10 +141,10 @@ SDATA_END()
  *      GClass trace levels
  *---------------------------------------------*/
 enum {
-    TRACE_DEBUG = 0x0001,
+    TRACE_MESSAGES = 0x0001,
 };
 PRIVATE const trace_level_t s_user_trace_level[16] = {
-{"debug",        "Trace to debug"},
+{"messages",        "Trace messages"},
 {0, 0},
 };
 
@@ -317,6 +370,58 @@ PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj 
     printf("UTC time is %s\n",UTCTime);
 */
 
+/***************************************************************************
+ *  Build gps message
+ ***************************************************************************/
+PRIVATE json_t *build_gps_message(hgobj gobj, GBUFFER *gbuf)
+{
+    json_t *jn_gps_mesage = json_object();
+
+    /*----------------
+     *  "gps_fixed"
+     *----------------
+     */
+
+    /*----------------
+     *  "latitude"
+     *----------------
+     */
+
+    /*----------------
+     *  "longitude"
+     *----------------
+     */
+
+    /*----------------
+     *  "accuracy"
+     *----------------
+     */
+
+    /*----------------
+     *  "altitude"
+     *----------------
+     */
+
+    /*----------------
+     *  "heading"
+     *----------------
+     */
+
+    /*----------------
+     *  "satellites"
+     *----------------
+     */
+
+    /*----------------
+     *  "speed"
+     *----------------
+     */
+
+    return jn_gps_mesage;
+}
+
+
+
 
             /***************************
              *      Actions
@@ -368,10 +473,19 @@ PRIVATE int ac_disconnected(hgobj gobj, const char *event, json_t *kw, hgobj src
 PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
 //     PRIVATE_DATA *priv = gobj_priv_data(gobj);
-//     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
 
+    GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
+
+    char *p = gbuf_cur_rd_pointer(gbuf);
     // TODO
-    return gobj_publish_event(gobj, "EV_ON_MESSAGE", kw);
+    //gobj_publish_event(gobj, "EV_ON_MESSAGE", kw);
+
+    if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
+        trace_msg0("%s", p);
+    }
+
+    KW_DECREF(kw);
+    return 0;
 }
 
 /***************************************************************************
