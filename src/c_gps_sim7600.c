@@ -97,7 +97,7 @@ PRIVATE int send_set_cgpshor(hgobj gobj);
 PRIVATE int process_set_cgpshor(hgobj gobj, GBUFFER *gbuf);
 PRIVATE int send_cgnssinfo(hgobj gobj);
 PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf);
-PRIVATE int build_gps_message(hgobj gobj);
+PRIVATE int build_gps_message(hgobj gobj, char *s);
 
 /***************************************************************************
  *          Data: config, public data, private data
@@ -127,7 +127,7 @@ SDATA_END()
 };
 PRIVATE sdata_desc_t pm_set_gnss_interval[] = {
 /*-PM----type-----------name------------flag------------default-----description---------- */
-SDATAPM (ASN_OCTET_STR, "gnss_interval", 0,             0,          "Interval in seconds of gnss data (0 to stop, 1-255 interval in seconds)"),
+SDATAPM (ASN_OCTET_STR, "interval",     0,             0,          "Interval in seconds of gnss data (0 to stop, 1-255 interval in seconds)"),
 SDATA_END()
 };
 PRIVATE sdata_desc_t pm_set_accuracy[] = {
@@ -162,7 +162,7 @@ SDATA (ASN_OCTET_STR,   "device",           SDF_RD,             "",         "int
 SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0,          "Connection state. Important filter!"),
 SDATA (ASN_INTEGER,     "timeout_boot",     SDF_RD,             10*1000,    "timeout waiting gps boot"),
 SDATA (ASN_INTEGER,     "timeout_resp",     SDF_RD,             5*1000,     "timeout waiting gps response"),
-SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 10,         "gps data periodic time interval"),
+SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 1,         "gps data periodic time interval"),
 SDATA (ASN_UNSIGNED,    "accuracy",         SDF_WR|SDF_PERSIST, 2,          "gps accuracy"),
 
 SDATA (ASN_POINTER,     "user_data",        0,  0, "user data"),
@@ -379,7 +379,7 @@ PRIVATE json_t *cmd_set_gnss_interval(hgobj gobj, const char *cmd, json_t *kw, h
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
-    int interval = kw_get_int(kw, "gnss_interval", 10, KW_WILD_NUMBER);
+    int interval = kw_get_int(kw, "interval", 1, KW_WILD_NUMBER);
 
     if(interval <= 0 || interval >= 255) {
         return msg_iev_build_webix(
@@ -766,6 +766,7 @@ PRIVATE int send_cgnssinfo(hgobj gobj)
 PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
+    #define CGNSSINFO "+CGNSSINFO: "
 
     if(!priv->inform_on_close) {
         gobj_write_bool_attr(gobj, "connected", TRUE);
@@ -778,9 +779,14 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
 
     if(len > 6) {
         if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
-            build_gps_message(gobj);
-            priv->gps_state = WAIT_INTERVAL;
-            set_timeout(priv->timer, 1000 * gobj_read_uint32_attr(gobj, "gnss_interval"));
+            char *line;
+            while((line = gbuf_getline(gbuf, '\n'))) {
+                if(strncmp(line, CGNSSINFO, strlen(CGNSSINFO))==0) {
+                    build_gps_message(gobj, line + strlen(CGNSSINFO));
+                    priv->gps_state = WAIT_INTERVAL;
+                    set_timeout(priv->timer, 1000 * gobj_read_int32_attr(gobj, "gnss_interval"));
+                }
+            }
         }
     }
 
@@ -790,7 +796,7 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
 /***************************************************************************
  *
  ***************************************************************************/
-PRIVATE int build_gps_message(hgobj gobj)
+PRIVATE int build_gps_message(hgobj gobj, char *s)
 {
 /*
 
