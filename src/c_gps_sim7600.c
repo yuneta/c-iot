@@ -63,7 +63,8 @@ typedef enum {
     WAIT_SET_CGPSAUTO,      // Set auto gps
     WAIT_SET_CGPS,          // Enable gps
     WAIT_SET_CGPSHOR,       // Configure positioning desired accuracy
-    WAIT_CGNSSINFO          // Get GNSS information
+    WAIT_CGNSSINFO,         // Get GNSS information
+    WAIT_INTERVAL           // Wait between ccnss
 } gps_state_t;
 
 PRIVATE const char *gps_state_names[] = {
@@ -74,6 +75,7 @@ PRIVATE const char *gps_state_names[] = {
     "WAIT_SET_CGPS",
     "WAIT_SET_CGPSHOR",
     "WAIT_CGNSSINFO",
+    "WAIT_INTERVAL",
     0
 };
 
@@ -203,7 +205,7 @@ typedef struct _PRIVATE_DATA {
     //int32_t timeout_base;
 
     GBUFFER *gbuf_rx;
-    int gps_state;
+    gps_state_t gps_state;
 
     BOOL inform_on_close;
 
@@ -744,7 +746,7 @@ PRIVATE int send_cgnssinfo(hgobj gobj)
 
     char message[80];
 
-    snprintf(message, sizeof(message), "AT+CGNSSINFO=%d", gobj_read_uint32_attr(gobj, "gnss_interval"));
+    snprintf(message, sizeof(message), "AT+CGNSSINFO");
 
     GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
     json_t *kw_send = json_pack("{s:I}",
@@ -777,8 +779,8 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
     if(len > 6) {
         if(strncmp(p + len - 6, "\r\nOK\r\n", 6)==0) {
             build_gps_message(gobj);
-            clear_timeout(priv->timer);
-            send_cgnssinfo(gobj);
+            priv->gps_state = WAIT_INTERVAL;
+            set_timeout(priv->timer, 1000 * gobj_read_uint32_attr(gobj, "gnss_interval"));
         }
     }
 
@@ -947,6 +949,17 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
     case WAIT_CGNSSINFO:        // Get GNSS information
         process_cgnssinfo(gobj, priv->gbuf_rx);
         break;
+    case WAIT_INTERVAL:
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+            "msg",          "%s", "What is that???",
+            "state",        "%s", STATE_NAME(priv->gps_state),
+            NULL
+        );
+        log_debug_gbuf(0, gbuf, "What is that???");
+        break;
     }
 
     KW_DECREF(kw);
@@ -983,6 +996,9 @@ PRIVATE int ac_timeout(hgobj gobj, const char *event, json_t *kw, hgobj src)
             NULL
         );
         gobj_send_event(priv->gobj_bottom, "EV_DROP", 0, gobj);
+        break;
+    case WAIT_INTERVAL:
+        send_cgnssinfo(gobj);
         break;
     }
 
