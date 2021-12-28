@@ -13,6 +13,18 @@
 /***************************************************************************
  *              Constants
  ***************************************************************************/
+/*
+    On connected wait:
+        "+CPIN: READY\r\n"
+        "SMS DONE\r\n"
+        "PB DONE\r\n"
+ */
+
+typedef enum {
+    WAIT_AT,
+    WAIT_CHECK_AT_CGPS,
+    WAIT_SET_AT_CGPSAUTO
+} gps_state_t;
 
 /***************************************************************************
  *              Structures
@@ -413,15 +425,20 @@ PRIVATE const EVENT output_events[] = {
     {NULL, 0}
 };
 PRIVATE const char *state_names[] = {
-    "ST_IDLE",
+    "ST_DISCONNECTED",
+    "ST_CONNECTED",
     NULL
 };
 
-PRIVATE EV_ACTION ST_IDLE[] = {
+PRIVATE EV_ACTION ST_DISCONNECTED[] = {
+    {"EV_CONNECTED",        ac_connected,       "ST_CONNECTED"},
+    {"EV_STOPPED",          0,                  0},
+    {0,0,0}
+};
+PRIVATE EV_ACTION ST_CONNECTED[] = {
     {"EV_RX_DATA",          ac_rx_data,         0},
     {"EV_SEND_MESSAGE",     ac_send_message,    0},
-    {"EV_CONNECTED",        ac_connected,       0},
-    {"EV_DISCONNECTED",     ac_disconnected,    0},
+    {"EV_DISCONNECTED",     ac_disconnected,    "ST_DISCONNECTED"},
     {"EV_TX_READY",         ac_transmit_ready,  0},
     {"EV_TIMEOUT",          ac_timeout,         0},
     {"EV_STOPPED",          0,                  0},
@@ -429,7 +446,8 @@ PRIVATE EV_ACTION ST_IDLE[] = {
 };
 
 PRIVATE EV_ACTION *states[] = {
-    ST_IDLE,
+    ST_DISCONNECTED,
+    ST_CONNECTED,
     NULL
 };
 
