@@ -160,7 +160,7 @@ SDATA (ASN_OCTET_STR,   "imei",             SDF_RD,             "",         "Inf
 SDATA (ASN_JSON,        "kw_serial",        SDF_RD,             0,          "Kw to create serial bottom gobj"),
 SDATA (ASN_OCTET_STR,   "device",           SDF_RD,             "",         "interface device, ex: ttyUSB1"),
 SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0,          "Connection state. Important filter!"),
-SDATA (ASN_INTEGER,     "timeout_boot",     SDF_RD,             10*1000,    "timeout waiting gps boot"),
+SDATA (ASN_INTEGER,     "timeout_boot",     SDF_RD,             8*1000,     "timeout waiting gps boot"),
 SDATA (ASN_INTEGER,     "timeout_resp",     SDF_RD,             5*1000,     "timeout waiting gps response"),
 SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 1,          "gps data periodic time interval"),
 SDATA (ASN_INTEGER,     "accuracy",         SDF_WR|SDF_PERSIST, 2,          "gps accuracy"),
@@ -932,8 +932,7 @@ PRIVATE int build_gps_message(hgobj gobj, char *s)
      *  "tm"
      *----------------
      */
-    json_object_set_new(jn_gps_mesage, "_date", json_string(ss[8]));
-    json_object_set_new(jn_gps_mesage, "_time", json_string(ss[9]));
+    json_object_set_new(jn_gps_mesage, "_gps_time", json_sprintf("%s %s", ss[8], ss[9]));
 
     /*----------------
      *  "altitude"
