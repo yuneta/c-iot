@@ -162,8 +162,8 @@ SDATA (ASN_OCTET_STR,   "device",           SDF_RD,             "",         "int
 SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,   0,          "Connection state. Important filter!"),
 SDATA (ASN_INTEGER,     "timeout_boot",     SDF_RD,             10*1000,    "timeout waiting gps boot"),
 SDATA (ASN_INTEGER,     "timeout_resp",     SDF_RD,             5*1000,     "timeout waiting gps response"),
-SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 1,         "gps data periodic time interval"),
-SDATA (ASN_UNSIGNED,    "accuracy",         SDF_WR|SDF_PERSIST, 2,          "gps accuracy"),
+SDATA (ASN_INTEGER,     "gnss_interval",    SDF_WR|SDF_PERSIST, 1,          "gps data periodic time interval"),
+SDATA (ASN_INTEGER,     "accuracy",         SDF_WR|SDF_PERSIST, 2,          "gps accuracy"),
 
 SDATA (ASN_POINTER,     "user_data",        0,  0, "user data"),
 SDATA (ASN_POINTER,     "user_data2",       0,  0, "more user data"),
@@ -703,7 +703,7 @@ PRIVATE int send_set_cgpshor(hgobj gobj)
 
     char message[80];
 
-    snprintf(message, sizeof(message), "AT+CGPSHOR=%d", gobj_read_uint32_attr(gobj, "accuracy"));
+    snprintf(message, sizeof(message), "AT+CGPSHOR=%d", gobj_read_int32_attr(gobj, "accuracy"));
 
     GBUFFER *gbuf = gbuf_create(strlen(message)+2, strlen(message)+2, 0, 0);
     json_t *kw_send = json_pack("{s:I}",
@@ -782,6 +782,7 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
             char *line;
             while((line = gbuf_getline(gbuf, '\n'))) {
                 if(strncmp(line, CGNSSINFO, strlen(CGNSSINFO))==0) {
+                    left_justify(line);
                     build_gps_message(gobj, line + strlen(CGNSSINFO));
                     priv->gps_state = WAIT_INTERVAL;
                     set_timeout(priv->timer, 1000 * gobj_read_int32_attr(gobj, "gnss_interval"));
@@ -795,82 +796,168 @@ PRIVATE int process_cgnssinfo(hgobj gobj, GBUFFER *gbuf)
 
 /***************************************************************************
  *
+    +CGNSSINFO: 2,04,01,00,4503.299486,N,00074.557903,E,281221,105825.0,33.3,0.0,,1.7,1.4,0.9
+
+    0  [<mode>],           Fix mode 2=2D fix 3=3D fix
+    1  [<GPS-SVs>],        GPS satellite valid numbers, scope: 00-12
+    2  [<GLONASS-SVs>],    GLONASS satellite valid numbers, scope: 00-12
+    3  [BEIDOU-SVs],       BEIDOU satellite valid numbers, scope: 00-12
+    4  [<lat>],            Latitude of current position. Output format is ddmm.mmmmmm
+    5  [<N/S>],            N/S Indicator, N=north or S=south
+    6  [<log>],            Longitude of current position. Output format is dddmm.mmmmmm
+    7  [<E/W>],            E/W Indicator, E=east or W=west
+    8  [<date>],           Date. Output format is ddmmyy
+    9  [<UTC-time>],       UTC Time. Output format is hhmmss.s
+    10 [<alt>],            MSL Altitude. Unit is meters.
+    11 [<speed>],          Speed Over Ground. Unit is knots.
+    12 [<course>],         Course. Degrees.
+    13 [<PDOP>],           Position Dilution Of Precision.
+    14 [HDOP],             Horizontal Dilution Of Precision.
+    15 [VDOP]              Vertical Dilution Of Precision.
+ *
  ***************************************************************************/
 PRIVATE int build_gps_message(hgobj gobj, char *s)
 {
-/*
+    char LatDD[3], LatMM[10], LogDD[4], LogMM[10];
+    int list_size;
 
-    strncpy(LatDD,RecMessage,2);
-    strncpy(LatMM,RecMessage+2,9);
-    Lat = atoi(LatDD) + (atof(LatMM)/60);
-    if(RecMessage[12] == 'N')
-        printf("Latitude is %f N\n",Lat);
-    else if(RecMessage[12] == 'S')
-        printf("Latitude is %f S\n",Lat);
-    else
-        return false;
-
-    strncpy(LogDD,RecMessage+14,3);
-    strncpy(LogMM,RecMessage+17,9);
-    Log = atoi(LogDD) + (atof(LogMM)/60);
-    if(RecMessage[27] == 'E')
-        printf("Longitude is %f E\n",Log);
-    else if(RecMessage[27] == 'W')
-        printf("Longitude is %f W\n",Log);
-    else
-        return false;
-
-    strncpy(DdMmYy,RecMessage+29,6);
-    DdMmYy[6] = '\0';
-    printf("Day Month Year is %s\n",DdMmYy);
-
-    strncpy(UTCTime,RecMessage+36,6);
-    UTCTime[6] = '\0';
-    printf("UTC time is %s\n",UTCTime);
-*/
+    const char **ss = split3(s, ",", &list_size);
+    if(list_size!=16) {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+            "msg",          "%s", "GNSS line must have 16 fields",
+            "s",            "%s", s,
+            "size",         "%d", list_size,
+            NULL
+        );
+        split_free3(ss);
+        return -1;
+    }
 
     json_t *jn_gps_mesage = json_object();
+    json_object_set_new(
+        jn_gps_mesage, "imei", json_string(gobj_read_str_attr(gobj, "imei"))
+    );
+    json_object_set_new(
+        jn_gps_mesage, "manufacturer", json_string(gobj_read_str_attr(gobj, "manufacturer"))
+    );
+    json_object_set_new(
+        jn_gps_mesage, "model", json_string(gobj_read_str_attr(gobj, "model"))
+    );
 
     /*----------------
      *  "gps_fixed"
      *----------------
      */
-
-    /*----------------
-     *  "latitude"
-     *----------------
-     */
-
-    /*----------------
-     *  "longitude"
-     *----------------
-     */
-
-    /*----------------
-     *  "accuracy"
-     *----------------
-     */
-
-    /*----------------
-     *  "altitude"
-     *----------------
-     */
-
-    /*----------------
-     *  "heading"
-     *----------------
-     */
+    int gps_fixed = atoi(ss[0]);
+    json_object_set_new(jn_gps_mesage, "gps_fixed", json_integer(gps_fixed));
 
     /*----------------
      *  "satellites"
      *----------------
      */
+    json_object_set_new(jn_gps_mesage, "satellites", json_integer(atoi(ss[1])));
+    json_object_set_new(jn_gps_mesage, "satellites-glonass", json_integer(atoi(ss[2])));
+    json_object_set_new(jn_gps_mesage, "satellites-beidou", json_integer(atoi(ss[3])));
+
+    /*----------------
+     *  "latitude"
+     *----------------
+     */
+    strncpy(LatDD, ss[4], 2);
+    strncpy(LatMM, ss[4] + 2, 9);
+    double Lat = atoi(LatDD) + (atof(LatMM)/60);
+    if(ss[5][0] == 'N') {
+        ;
+    } else if(ss[5][0] == 'S') {
+        Lat = -Lat;
+    } else {
+        Lat = 0;
+        if(gps_fixed) {
+            log_error(0,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Latitude unknown",
+                "lat",          "%s", ss[5],
+                "s",            "%s", s,
+                NULL
+            );
+        }
+    }
+    json_object_set_new(jn_gps_mesage, "latitude", json_sprintf("%.6f", Lat));
+
+    /*----------------
+     *  "longitude"
+     *----------------
+     */
+    strncpy(LogDD, ss[6], 3);
+    strncpy(LogMM, ss[6] + 3, 9);
+    double Log = atoi(LogDD) + (atof(LogMM)/60);
+    if(ss[7][0] == 'E') {
+        ;
+    } else if(ss[7][0] == 'W') {
+        Log = -Log;
+    } else {
+        Log = 0;
+        if(gps_fixed) {
+            log_error(0,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Longitude unknown",
+                "lat",          "%s", ss[7],
+                "s",            "%s", s,
+                NULL
+            );
+        }
+    }
+    json_object_set_new(jn_gps_mesage, "longitude", json_sprintf("%.6f", Log));
+
+    if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
+        trace_msg("Lat,Lon: %f,%f", Lat, Log);
+    }
+
+    /*----------------
+     *  "accuracy"
+     *----------------
+     */
+    json_object_set_new(
+        jn_gps_mesage, "accuracy", json_integer(gobj_read_int32_attr(gobj, "accuracy"))
+    );
+
+    /*----------------
+     *  "tm"
+     *----------------
+     */
+    json_object_set_new(jn_gps_mesage, "_date", json_string(ss[8]));
+    json_object_set_new(jn_gps_mesage, "_time", json_string(ss[9]));
+
+    /*----------------
+     *  "altitude"
+     *----------------
+     */
+    json_object_set_new(jn_gps_mesage, "altitude", json_string(ss[10]));
 
     /*----------------
      *  "speed"
      *----------------
      */
+    json_object_set_new(jn_gps_mesage, "speed", json_string(ss[11]));
 
+    /*----------------
+     *  "heading"
+     *----------------
+     */
+    json_object_set_new(jn_gps_mesage, "heading", json_string(ss[12]));
+
+    split_free3(ss);
+
+    if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
+        log_debug_json(0, jn_gps_mesage, "gps_message");
+    }
     return gobj_publish_event(gobj, "EV_ON_MESSAGE", jn_gps_mesage);
 }
 
