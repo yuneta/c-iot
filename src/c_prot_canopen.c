@@ -26,6 +26,28 @@
 /***************************************************************************
  *          Data: config, public data, private data
  ***************************************************************************/
+PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+
+PRIVATE sdata_desc_t pm_send_message[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "msg_type",     0,              0,          "Type of message to send"),
+SDATA_END()
+};
+PRIVATE sdata_desc_t pm_help[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_OCTET_STR, "cmd",          0,              0,          "command about you want help."),
+SDATAPM (ASN_UNSIGNED,  "level",        0,              0,          "command search level in childs"),
+SDATA_END()
+};
+PRIVATE const char *a_help[] = {"h", "?", 0};
+
+PRIVATE sdata_desc_t command_table[] = {
+/*-CMD---type-----------name----------------alias---items-----------json_fn---------description---------- */
+SDATACM (ASN_SCHEMA,    "help",             a_help, pm_help,        cmd_help,       "Command's help"),
+SDATACM (ASN_SCHEMA,    "send-message",     0,      pm_send_message,cmd_send_message,"Send command to gps"),
+SDATA_END()
+};
 
 /*---------------------------------------------*
  *      Attributes - order affect to oid's
@@ -147,6 +169,82 @@ PRIVATE void mt_destroy(hgobj gobj)
             /***************************
              *      Local Methods
              ***************************/
+
+
+
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    KW_INCREF(kw);
+    json_t *jn_resp = gobj_build_cmds_doc(gobj, kw);
+    return msg_iev_build_webix(
+        gobj,
+        0,
+        jn_resp,
+        0,
+        0,
+        kw  // owned
+    );
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    const char *msg_type = kw_get_str(kw, "msg_type", "", 0);
+    if(empty_string(msg_type)) {
+        return msg_iev_build_webix(
+            gobj,
+            -1,
+            json_sprintf("What type of message?"),
+            0,
+            0,
+            kw  // owned
+        );
+    }
+
+    json_t *kw_send = 0;
+
+    SWITCHS(msg_type) {
+        CASES("string")
+            // TODO binary?
+            int ln = 0; // TODO ???
+            char *bf = 0; // TODO
+            GBUFFER *gbuf = gbuf_create(ln, ln, 0, 0);
+            json_t *kw_send = json_pack("{s:I}",
+                "gbuffer", (json_int_t)(size_t)gbuf
+            );
+            gbuf_append(gbuf, bf, ln);
+            break;
+        DEFAULTS
+            return msg_iev_build_webix(
+                gobj,
+                -1,
+                json_sprintf("Type of message unknown: %s", msg_type),
+                0,
+                0,
+                kw  // owned
+            );
+
+            break;
+    } SWITCHS_END;
+
+
+    int ret = gobj_send_event(gobj, "EV_SEND_MESSAGE", kw_send, gobj);
+
+    return msg_iev_build_webix(
+        gobj,
+        ret,
+        0,
+        0,
+        0,
+        kw  // owned
+    );
+}
 
 
 
@@ -371,7 +469,7 @@ PRIVATE GCLASS _gclass = {
     sizeof(PRIVATE_DATA),
     0,  // acl
     s_user_trace_level,
-    0, // cmds
+    command_table,  // command_table
     0, // gcflag
 };
 
