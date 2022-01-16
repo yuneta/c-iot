@@ -515,12 +515,12 @@ PRIVATE int ac_tx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
             "gobj",         "%s", gobj_full_name(gobj),
             "function",     "%s", __FUNCTION__,
             "msgset",       "%s", MSGSET_SYSTEM_ERROR,
-            "msg",          "%s", "read FAILED",
+            "msg",          "%s", "write FAILED",
             "error",        "%d", errno,
             "strerror",     "%s", strerror(errno),
             NULL
         );
-        gobj_stop(gobj);
+        // gobj_stop(gobj); NO pares, da error al transmitir una wrong frame
         KW_DECREF(kw);
         return -1;
     }
