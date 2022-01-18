@@ -2283,14 +2283,16 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                         break;
                 }
 
-                if(variable_format == FORMAT_INT16) {
-                    int16_t v = endian_16(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
-                } else {
-                    uint16_t v = endian_16(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
+                if(pv) {
+                    if(variable_format == FORMAT_INT16) {
+                        int16_t v = endian_16(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    } else {
+                        uint16_t v = endian_16(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    }
                 }
             }
             break;
@@ -2314,14 +2316,16 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                         break;
                 }
 
-                if(variable_format == FORMAT_INT32) {
-                    int32_t v = endian_32(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
-                } else {
-                    uint32_t v = endian_32(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
+                if(pv) {
+                    if(variable_format == FORMAT_INT32) {
+                        int32_t v = endian_32(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    } else {
+                        uint32_t v = endian_32(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    }
                 }
             }
             break;
@@ -2345,14 +2349,16 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                         break;
                 }
 
-                if(variable_format == FORMAT_INT64) {
-                    int64_t v = endian_64(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
-                } else {
-                    uint64_t v = endian_64(endian_format, (uint8_t *)pv);
-                    v = v*multiplier;
-                    jn_value = json_integer(v);
+                if(pv) {
+                    if(variable_format == FORMAT_INT64) {
+                        int64_t v = endian_64(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    } else {
+                        uint64_t v = endian_64(endian_format, (uint8_t *)pv);
+                        v = v*multiplier;
+                        jn_value = json_integer(v);
+                    }
                 }
             }
             break;
@@ -2375,9 +2381,11 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                         break;
                 }
 
-                float v = endian_float(endian_format, (uint8_t *)pv);
-                v = v*multiplier;
-                jn_value = json_real(v);
+                if(pv) {
+                    float v = endian_float(endian_format, (uint8_t *)pv);
+                    v = v*multiplier;
+                    jn_value = json_real(v);
+                }
             }
             break;
 
@@ -2399,9 +2407,11 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                         break;
                 }
 
-                double v = endian_double(endian_format, (uint8_t *)pv);
-                v = v*multiplier;
-                jn_value = json_real(v);
+                if(pv) {
+                    double v = endian_double(endian_format, (uint8_t *)pv);
+                    v = v*multiplier;
+                    jn_value = json_real(v);
+                }
             }
             break;
     }
