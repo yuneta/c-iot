@@ -434,6 +434,7 @@ typedef struct _PRIVATE_DATA {
     state_t st;
     int modbus_function;
 
+    json_t *jn_request;
 } PRIVATE_DATA;
 
 
@@ -566,6 +567,7 @@ PRIVATE int mt_stop(hgobj gobj)
     clear_timeout(priv->timer);
     gobj_stop(priv->timer);
 
+    JSON_DECREF(priv->jn_request);
     return 0;
 }
 
@@ -773,6 +775,14 @@ PRIVATE const char *modbus_function_name(int modbus_function)
         case MODBUS_FC_WRITE_AND_READ_REGISTERS:
             return "WRITE_AND_READ_REGISTERS";
         default:
+            log_error(LOG_OPT_TRACE_STACK,
+                "gobj",         "%s", __FILE__,
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Modbus function UNKNOWN",
+                "function",     "%d", modbus_function,
+                NULL
+            );
             return "???";
     }
 }
@@ -1022,7 +1032,131 @@ PRIVATE GBUFFER *build_modbus_request_read_message(hgobj gobj, json_t *jn_slave,
             address,
             address,
             size,
-            id
+            id // ??? TODO revisa qué es
+        );
+    }
+
+    return gbuf;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_request)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj); // WARNING must be used only for t_id
+
+    uint8_t req[12] = {0};
+    uint8_t slave_id = (uint8_t)kw_get_int(jn_request, "id", 1, 0);
+    uint16_t address = kw_get_int(jn_request, "address", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    //uint16_t size = kw_get_int(jn_request, "size", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    // TODO value: implement all write types
+    uint16_t value = kw_get_int(jn_request, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    const char *type = kw_get_str(jn_request, "type", "", KW_REQUIRED);
+    int object_type = get_object_type(gobj, type);
+
+    uint8_t modbus_function = 0;
+    switch(object_type) {
+        case TYPE_COIL:
+            modbus_function = MODBUS_FC_WRITE_SINGLE_COIL;
+            break;
+
+// TODO implement all write types
+//         case TYPE_HOLDING_REGISTER:
+//             modbus_function = MODBUS_FC_WRITE_SINGLE_REGISTER;
+//             if(size > MODBUS_MAX_WRITE_REGISTERS) {
+//                 log_error(0,
+//                     "gobj",         "%s", gobj_full_name(gobj),
+//                     "function",     "%s", __FUNCTION__,
+//                     "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+//                     "msg",          "%s", "Modbus Too many discrete inputs to write",
+//                     "size",         "%d", size,
+//                     NULL
+//                 );
+//                 size = MODBUS_MAX_WRITE_REGISTERS;
+//             }
+//             break;
+
+        default:
+            log_error(LOG_OPT_TRACE_STACK,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Modbus object type NOT SUPPORTE to write",
+                "type",         "%s", type,
+                NULL
+            );
+            return 0;
+    }
+
+    GBUFFER *gbuf = gbuf_create(32, 32, 0, 0);
+
+    SWITCHS(priv->modbus_protocol) {
+        CASES("TCP")
+            /* Increase transaction ID */
+            if (priv->t_id < UINT16_MAX)
+                priv->t_id++;
+            else
+                priv->t_id = 0;
+
+            req[0] = priv->t_id >> 8;
+            req[1] = priv->t_id & 0x00ff;
+
+            /* Protocol Modbus */
+            req[2] = 0;
+            req[3] = 0;
+
+            /* Substract the header length to the message length */
+            int mbap_length = 12 - 6;
+
+            req[4] = mbap_length >> 8;
+            req[5] = mbap_length & 0x00FF;
+            req[6] = slave_id;
+            req[7] = modbus_function;
+            req[8] = address >> 8;
+            req[9] = address & 0x00ff;
+            req[10] = value >> 8;
+            req[11] = value & 0x00ff;
+            gbuf_append(gbuf, req, 12);
+            break;
+
+        CASES("RTU")
+        CASES("ASCII")
+// TODO            req[0] = slave_id;
+//             req[1] = modbus_function;
+//             req[2] = address >> 8;
+//             req[3] = address & 0x00ff;
+//             req[4] = size >> 8;
+//             req[5] = size & 0x00ff;
+//
+//             uint16_t crc = crc16(req, 6);
+//             req[7] = crc >> 8;
+//             req[8] = crc & 0x00FF;
+//             gbuf_append(gbuf, req, 9);
+//             break;
+
+        DEFAULTS
+            log_error(0,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Modbus protocol UNKNOWN",
+                "protocol",     "%s", priv->modbus_protocol,
+                NULL
+            );
+            break;
+    } SWITCHS_END;
+
+    priv->modbus_function = modbus_function;
+
+    if(gobj_trace_level(gobj) & TRACE_DECODE) {
+        trace_msg("🍅🍅⏩ func: %d %s, slave_id: %d, addr: %d (0x%04X), value: %d",
+            modbus_function,
+            modbus_function_name(modbus_function),
+            slave_id,
+            address,
+            address,
+            value
         );
     }
 
@@ -1403,9 +1537,41 @@ PRIVATE int poll_modbus(hgobj gobj)
     }
 
     GBUFFER *gbuf = build_modbus_request_read_message(gobj, priv->cur_slave_, priv->cur_map_);
-    if(gbuf) {
-        send_data(gobj, gbuf);
+    send_data(gobj, gbuf);
+
+    // Change state
+    gobj_change_state(gobj, "ST_WAIT_RESPONSE");
+
+    // Set response timeout
+    set_timeout(priv->timer, priv->timeout_response*1000);
+
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int send_request(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
+    if(!priv->jn_request) {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+            "msg",          "%s", "jn_request NULL",
+            NULL
+        );
+        // Set response timeout
+        set_timeout(priv->timer, 10);
+        return -1;
     }
+
+    GBUFFER *gbuf = build_modbus_request_write_message(gobj, priv->jn_request);
+    send_data(gobj, gbuf);
+
+    JSON_DECREF(priv->jn_request);
 
     // Change state
     gobj_change_state(gobj, "ST_WAIT_RESPONSE");
@@ -1491,7 +1657,23 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
                 frame->function = head->function;
                 frame->slave_id = head->slave_id;
                 frame->byte_count = head->byte_count;
-                frame->payload_length = head->byte_count;
+                head->length = ntohs(head->length);
+                frame->payload_length = head->length - 3; // TODO head->byte_count;
+
+                if(frame->payload_length != head->byte_count) {
+                    if(frame->function != MODBUS_FC_WRITE_SINGLE_COIL) {
+                        log_error(0,
+                            "gobj",         "%s", gobj_full_name(gobj),
+                            "function",     "%s", __FUNCTION__,
+                            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+                            "msg",          "%s", "MIERDAAAAAAAAAAAAAA",
+                            "payload",      "%d", (int)frame->payload_length,
+                            "byte_count",   "%d", (int)head->byte_count,
+                            NULL
+                        );
+                    }
+                }
+
                 break;
 
             CASES("RTU")
@@ -1516,7 +1698,6 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
             "function",         "%s", __FUNCTION__,
             "msgset",           "%s", MSGSET_PROTOCOL_ERROR,
             "msg",              "%s", "modbus exception",
-            "function",         "%s", modbus_function_name(priv->modbus_function),
             "error_code",       "%d", error_code,
             "error_name",       "%s", modbus_exception_name(error_code),
             "cur_map_",         "%j", priv->cur_map_,
@@ -1550,13 +1731,15 @@ PRIVATE int frame_completed(hgobj gobj)
         CASES("TCP")
             int len = gbuf_leftbytes(gbuf);
             uint8_t *bf = gbuf_get(gbuf, len);
-            store_modbus_response_data(gobj, bf, len);
+            if(priv->frame_head.function != MODBUS_FC_WRITE_SINGLE_COIL) {
+                store_modbus_response_data(gobj, bf, len);
+            }
             break;
 
         CASES("RTU")
         CASES("ASCII")
             int len = gbuf_leftbytes(gbuf) - sizeof(uint16_t);  // - crc
-            uint8_t *bf = gbuf_get(gbuf, len);
+            gbuf_get(gbuf, len);
 // TODO            crc_calculated = crc16(msg, msg_length - 2);
 //             crc_received = (msg[msg_length - 2] << 8) | msg[msg_length - 1];
 //
@@ -1576,10 +1759,17 @@ PRIVATE int frame_completed(hgobj gobj)
 //                 return -1;
 //             }
 
-            store_modbus_response_data(gobj, bf, len);
-            break;
+//             store_modbus_response_data(gobj, bf, len);
+//             break;
 
         DEFAULTS
+            log_error(LOG_OPT_TRACE_STACK,
+                "gobj",         "%s", __FILE__,
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Protocol modbus UNKNOWN",
+                NULL
+            );
             break;
     } SWITCHS_END;
 
@@ -2798,21 +2988,25 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                 if(istream_is_completed(priv->istream_payload)) {
                     frame_completed(gobj);
                     RESET_MACHINE();
+                    gobj_change_state(gobj, "ST_SESSION"); // TODO ???
                 }
             }
             break;
         }
-
     }
 
     /*---------------------------*
      *      Next map
      *---------------------------*/
     if(next_map(gobj)<0) {
-        /*
-         *  NO map or end of cycle, wait timeout_polling
-         */
-        set_timeout(priv->timer, priv->timeout_polling*1000);
+        if(priv->jn_request) {
+            send_request(gobj);
+        } else {
+            /*
+             *  NO map or end of cycle, wait timeout_polling
+             */
+            set_timeout(priv->timer, priv->timeout_polling*1000);
+        }
     } else {
         if(poll_modbus(gobj)<0) {
             /*
@@ -2832,19 +3026,25 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
 /********************************************************************
  *  Message from high level, enqueue and send after poll cycle
  ********************************************************************/
-PRIVATE int ac_send_message(hgobj gobj, const char *event, json_t *kw, hgobj src)
+PRIVATE int ac_enqueue_tx_message(hgobj gobj, const char *event, json_t *kw, hgobj src)
 {
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+
     // TODO enqueue the message and send after poll cycle or between responses
     // format output message or directly send
     //gobj_send_event(gobj_bottom_gobj(gobj), "EV_TX_DATA", kw, gobj);
 
-    log_error(0,
-        "gobj",         "%s", gobj_full_name(gobj),
-        "function",     "%s", __FUNCTION__,
-        "msgset",       "%s", MSGSET_INTERNAL_ERROR,
-        "msg",          "%s", "WRITE in modbus NOT IMPLEMENTED",
-        NULL
-    );
+    if(priv->jn_request) {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
+            "msg",          "%s", "WRITE modbus ALREADY set, ignoring last",
+            NULL
+        );
+        JSON_DECREF(priv->jn_request);
+    }
+    priv->jn_request = json_incref(kw);
 
     KW_DECREF(kw);
     return 0;
@@ -2872,10 +3072,14 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
      *  Next map
      */
     if(next_map(gobj)<0) {
-        /*
-         *  NO map or end of cycle, wait timeout_polling
-         */
-        set_timeout(priv->timer, priv->timeout_polling*1000);
+        if(priv->jn_request) {
+            send_request(gobj);
+        } else {
+            /*
+             *  NO map or end of cycle, wait timeout_polling
+             */
+            set_timeout(priv->timer, priv->timeout_polling*1000);
+        }
     } else {
         if(poll_modbus(gobj)<0) {
             /*
@@ -2978,7 +3182,7 @@ PRIVATE EV_ACTION ST_WAIT_CONNECTED[] = {
     {0,0,0}
 };
 PRIVATE EV_ACTION ST_SESSION[] = {
-    {"EV_SEND_MESSAGE",     ac_send_message,            0},
+    {"EV_SEND_MESSAGE",     ac_enqueue_tx_message,      0},
     {"EV_TIMEOUT",          ac_timeout_polling,         0},
     {"EV_TX_READY",         0,                          0},
     {"EV_DROP",             ac_drop,                    0},
@@ -2987,6 +3191,7 @@ PRIVATE EV_ACTION ST_SESSION[] = {
 };
 PRIVATE EV_ACTION ST_WAIT_RESPONSE[] = {
     {"EV_RX_DATA",          ac_rx_data,                 0},
+    {"EV_SEND_MESSAGE",     ac_enqueue_tx_message,      0},
     {"EV_TIMEOUT",          ac_timeout_response,        "ST_SESSION"},
     {"EV_TX_READY",         0,                          0},
     {"EV_DROP",             ac_drop,                    0},
