@@ -368,7 +368,7 @@ PRIVATE sdata_desc_t tattr_desc[] = {
 /*-ATTR-type------------name----------------flag------------default---------description---------- */
 SDATA (ASN_OCTET_STR,   "modbus_protocol",  SDF_RD,         "TCP",          "Modbus protocol: TCP,RTU,ASCII"),
 SDATA (ASN_JSON,        "slaves",           SDF_WR,         "[]",           "Modbus configuration"),
-SDATA (ASN_INTEGER,     "timeout_polling",  SDF_WR|SDF_PERSIST,1,           "Polling modbus time in seconds"),
+SDATA (ASN_INTEGER,     "timeout_polling",  SDF_WR|SDF_PERSIST,1*1000,      "Polling modbus time in miliseconds"),
 SDATA (ASN_INTEGER,     "timeout_response", SDF_WR|SDF_PERSIST,5,           "Timeout response in seconds"),
 SDATA (ASN_BOOLEAN,     "connected",        SDF_RD|SDF_STATS,0,             "Connection state. Important filter!"),
 SDATA (ASN_OCTET_STR,   "on_open_event_name",SDF_RD,        "EV_ON_OPEN",   "Must be empty if you don't want receive this event"),
@@ -3031,7 +3031,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
             /*
              *  NO map or end of cycle, wait timeout_polling
              */
-            set_timeout(priv->timer, priv->timeout_polling*1000);
+            set_timeout(priv->timer, priv->timeout_polling);
         }
     } else {
         if(poll_modbus(gobj)<0) {
@@ -3039,7 +3039,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
              *  Problemas con el query actual, pasa al siguiente después del timeout
              */
             next_map(gobj);
-            set_timeout(priv->timer, priv->timeout_polling*1000);
+            set_timeout(priv->timer, priv->timeout_polling);
         } else {
             // timeout set by poll_modbus
         }
@@ -3104,7 +3104,7 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
             /*
              *  NO map or end of cycle, wait timeout_polling
              */
-            set_timeout(priv->timer, priv->timeout_polling*1000);
+            set_timeout(priv->timer, priv->timeout_polling);
         }
     } else {
         if(poll_modbus(gobj)<0) {
@@ -3112,7 +3112,7 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
              *  Problemas con el query actual, pasa al siguiente después del timeout
              */
             next_map(gobj);
-            set_timeout(priv->timer, priv->timeout_polling*1000);
+            set_timeout(priv->timer, priv->timeout_polling);
         } else {
             // timeout set by poll_modbus
         }
@@ -3136,14 +3136,14 @@ PRIVATE int ac_timeout_response(hgobj gobj, const char *event, json_t *kw, hgobj
         /*
          *  NO map or end of cycle, wait timeout_polling
          */
-        set_timeout(priv->timer, priv->timeout_polling*1000);
+        set_timeout(priv->timer, priv->timeout_response*1000);
     } else {
         if(poll_modbus(gobj)<0) {
             /*
              *  Problemas con el query actual, pasa al siguiente después del timeout
              */
             next_map(gobj);
-            set_timeout(priv->timer, priv->timeout_polling*1000);
+            set_timeout(priv->timer, priv->timeout_response*1000);
         } else {
             // timeout set by poll_modbus
         }
