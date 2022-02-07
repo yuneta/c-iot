@@ -323,6 +323,7 @@ static const uint8_t table_crc_lo[] = {
 PRIVATE json_t *cmd_help(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 PRIVATE json_t *cmd_authzs(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 PRIVATE json_t *cmd_dump_data(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
+PRIVATE json_t *cmd_set_poll_timeout(hgobj gobj, const char *cmd, json_t *kw, hgobj src);
 
 PRIVATE sdata_desc_t pm_help[] = {
 /*-PM----type-----------name------------flag------------default-----description---------- */
@@ -343,6 +344,11 @@ SDATAPM (ASN_OCTET_STR, "address",      0,              0,          "Address"),
 SDATAPM (ASN_OCTET_STR, "size",         0,              0,          "Size (-1 all data)"),
 SDATA_END()
 };
+PRIVATE sdata_desc_t pm_timeout[] = {
+/*-PM----type-----------name------------flag------------default-----description---------- */
+SDATAPM (ASN_INTEGER,   "timeout",      0,              "1",        "Pollig timeout in seconds"),
+SDATA_END()
+};
 
 PRIVATE const char *a_help[] = {"h", "?", 0};
 
@@ -351,6 +357,7 @@ PRIVATE sdata_desc_t command_table[] = {
 SDATACM (ASN_SCHEMA,    "help",             a_help,     pm_help,        cmd_help,       "Command's help"),
 SDATACM (ASN_SCHEMA,    "authzs",           0,          pm_authzs,      cmd_authzs,     "Authorization's help"),
 SDATACM (ASN_SCHEMA,    "dump_data",        0,          pm_dump_data,   cmd_dump_data,  "Dump slave data"),
+SDATACM (ASN_SCHEMA,    "set-poll-timeout", 0,          pm_timeout,     cmd_set_poll_timeout, "Set polling timeout (in seconds)"),
 SDATA_END()
 };
 
@@ -728,6 +735,25 @@ PRIVATE json_t *cmd_dump_data(hgobj gobj, const char *cmd, json_t *kw, hgobj src
         gobj,
         0,
         json_sprintf("Data dumped in log file"),
+        0,
+        0,
+        kw  // owned
+    );
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE json_t *cmd_set_poll_timeout(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
+{
+    int timeout = kw_get_int(kw, "timeout", 1, KW_WILD_NUMBER);
+
+    gobj_write_int32_attr(gobj, "timeout_polling", timeout);
+
+    return msg_iev_build_webix(
+        gobj,
+        0,
+        json_sprintf("Poll timeout = %d seconds", timeout),
         0,
         0,
         kw  // owned
