@@ -749,6 +749,7 @@ PRIVATE json_t *cmd_set_poll_timeout(hgobj gobj, const char *cmd, json_t *kw, hg
     int timeout = kw_get_int(kw, "timeout", 1, KW_WILD_NUMBER);
 
     gobj_write_int32_attr(gobj, "timeout_polling", timeout);
+    gobj_save_persistent_attrs(gobj, json_string("timeout_polling"));
 
     return msg_iev_build_webix(
         gobj,
