@@ -346,7 +346,7 @@ SDATA_END()
 };
 PRIVATE sdata_desc_t pm_timeout[] = {
 /*-PM----type-----------name------------flag------------default-----description---------- */
-SDATAPM (ASN_INTEGER,   "timeout",      0,              "1",        "Pollig timeout in seconds"),
+SDATAPM (ASN_INTEGER,   "timeout",      0,              "1000",      "Pollig timeout in miliseconds"),
 SDATA_END()
 };
 
@@ -357,7 +357,7 @@ PRIVATE sdata_desc_t command_table[] = {
 SDATACM (ASN_SCHEMA,    "help",             a_help,     pm_help,        cmd_help,       "Command's help"),
 SDATACM (ASN_SCHEMA,    "authzs",           0,          pm_authzs,      cmd_authzs,     "Authorization's help"),
 SDATACM (ASN_SCHEMA,    "dump_data",        0,          pm_dump_data,   cmd_dump_data,  "Dump slave data"),
-SDATACM (ASN_SCHEMA,    "set-poll-timeout", 0,          pm_timeout,     cmd_set_poll_timeout, "Set polling timeout (in seconds)"),
+SDATACM (ASN_SCHEMA,    "set-poll-timeout", 0,          pm_timeout,     cmd_set_poll_timeout, "Set polling timeout (in miliseconds)"),
 SDATA_END()
 };
 
@@ -746,7 +746,7 @@ PRIVATE json_t *cmd_dump_data(hgobj gobj, const char *cmd, json_t *kw, hgobj src
  ***************************************************************************/
 PRIVATE json_t *cmd_set_poll_timeout(hgobj gobj, const char *cmd, json_t *kw, hgobj src)
 {
-    int timeout = kw_get_int(kw, "timeout", 1, KW_WILD_NUMBER);
+    int timeout = kw_get_int(kw, "timeout", 1000, KW_WILD_NUMBER);
 
     gobj_write_int32_attr(gobj, "timeout_polling", timeout);
     gobj_save_persistent_attrs(gobj, json_string("timeout_polling"));
