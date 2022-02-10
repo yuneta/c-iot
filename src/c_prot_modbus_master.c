@@ -754,7 +754,7 @@ PRIVATE json_t *cmd_set_poll_timeout(hgobj gobj, const char *cmd, json_t *kw, hg
     return msg_iev_build_webix(
         gobj,
         0,
-        json_sprintf("Poll timeout = %d seconds", timeout),
+        json_sprintf("Poll timeout = %d miliseconds", timeout),
         0,
         0,
         kw  // owned
