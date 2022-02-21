@@ -3128,6 +3128,14 @@ PRIVATE int ac_timeout_response(hgobj gobj, const char *event, json_t *kw, hgobj
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
+    log_error(0,
+        "gobj",         "%s", gobj_full_name(gobj),
+        "function",     "%s", __FUNCTION__,
+        "msgset",       "%s", MSGSET_PROTOCOL_ERROR,
+        "msg",          "%s", "Modbus Timeout",
+        NULL
+    );
+
     /*
      *  Next map
      */
