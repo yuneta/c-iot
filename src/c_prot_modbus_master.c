@@ -441,7 +441,8 @@ typedef struct _PRIVATE_DATA {
     state_t st;
     int modbus_function;
 
-    json_t *jn_request;
+    json_t *jn_current_request;
+    json_t *jn_request_queue;
 } PRIVATE_DATA;
 
 
@@ -506,6 +507,7 @@ PRIVATE int mt_start(hgobj gobj)
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
     priv->jn_conversion = json_array();
+    priv->jn_request_queue = json_array();
 
     load_modbus_config(gobj);
     build_slave_data(gobj);
@@ -574,7 +576,8 @@ PRIVATE int mt_stop(hgobj gobj)
     clear_timeout(priv->timer);
     gobj_stop(priv->timer);
 
-    JSON_DECREF(priv->jn_request);
+    JSON_DECREF(priv->jn_request_queue);
+    JSON_DECREF(priv->jn_current_request);
     return 0;
 }
 
@@ -1582,7 +1585,7 @@ PRIVATE int send_request(hgobj gobj)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
-    if(!priv->jn_request) {
+    if(!priv->jn_current_request) {
         log_error(0,
             "gobj",         "%s", gobj_full_name(gobj),
             "function",     "%s", __FUNCTION__,
@@ -1595,10 +1598,11 @@ PRIVATE int send_request(hgobj gobj)
         return -1;
     }
 
-    GBUFFER *gbuf = build_modbus_request_write_message(gobj, priv->jn_request);
+    GBUFFER *gbuf = build_modbus_request_write_message(gobj, priv->jn_current_request);
     send_data(gobj, gbuf);
 
-    JSON_DECREF(priv->jn_request);
+    JSON_DECREF(priv->jn_current_request);
+    priv->jn_current_request = kw_get_list_value(priv->jn_request_queue, 0, KW_EXTRACT);
 
     // Change state
     gobj_change_state(gobj, "ST_WAIT_RESPONSE");
@@ -3026,7 +3030,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
      *      Next map
      *---------------------------*/
     if(next_map(gobj)<0) {
-        if(priv->jn_request) {
+        if(priv->jn_current_request) {
             send_request(gobj);
         } else {
             /*
@@ -3061,17 +3065,11 @@ PRIVATE int ac_enqueue_tx_message(hgobj gobj, const char *event, json_t *kw, hgo
     // format output message or directly send
     //gobj_send_event(gobj_bottom_gobj(gobj), "EV_TX_DATA", kw, gobj);
 
-    if(priv->jn_request) {
-        log_error(0,
-            "gobj",         "%s", gobj_full_name(gobj),
-            "function",     "%s", __FUNCTION__,
-            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
-            "msg",          "%s", "WRITE modbus ALREADY set, ignoring last",
-            NULL
-        );
-        JSON_DECREF(priv->jn_request);
+    if(priv->jn_current_request) {
+        json_array_append(priv->jn_request_queue, kw);
+    } else {
+        priv->jn_current_request = json_incref(kw);
     }
-    priv->jn_request = json_incref(kw);
 
     KW_DECREF(kw);
     return 0;
@@ -3099,7 +3097,7 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
      *  Next map
      */
     if(next_map(gobj)<0) {
-        if(priv->jn_request) {
+        if(priv->jn_current_request) {
             send_request(gobj);
         } else {
             /*
