@@ -1581,28 +1581,18 @@ PRIVATE int poll_modbus(hgobj gobj)
 /***************************************************************************
  *
  ***************************************************************************/
-PRIVATE int send_request(hgobj gobj)
+PRIVATE BOOL send_request(hgobj gobj)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
-    if(!priv->jn_current_request) {
-        log_error(0,
-            "gobj",         "%s", gobj_full_name(gobj),
-            "function",     "%s", __FUNCTION__,
-            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
-            "msg",          "%s", "jn_request NULL",
-            NULL
-        );
-        // Set response timeout
-        set_timeout(priv->timer, 10);
-        return -1;
+    if(json_array_size(priv->jn_request_queue)==0) {
+        return FALSE;
     }
 
-    GBUFFER *gbuf = build_modbus_request_write_message(gobj, priv->jn_current_request);
+    json_t *jn_current_request = kw_get_list_value(priv->jn_request_queue, 0, KW_EXTRACT);
+    GBUFFER *gbuf = build_modbus_request_write_message(gobj, jn_current_request);
+    JSON_DECREF(jn_current_request);
     send_data(gobj, gbuf);
-
-    JSON_DECREF(priv->jn_current_request);
-    priv->jn_current_request = kw_get_list_value(priv->jn_request_queue, 0, KW_EXTRACT);
 
     // Change state
     gobj_change_state(gobj, "ST_WAIT_RESPONSE");
@@ -1610,7 +1600,7 @@ PRIVATE int send_request(hgobj gobj)
     // Set response timeout
     set_timeout(priv->timer, priv->timeout_response*1000);
 
-    return 0;
+    return TRUE;
 }
 
 /***************************************************************************
@@ -3030,9 +3020,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
      *      Next map
      *---------------------------*/
     if(next_map(gobj)<0) {
-        if(priv->jn_current_request) {
-            send_request(gobj);
-        } else {
+        if(!send_request(gobj)) {
             /*
              *  NO map or end of cycle, wait timeout_polling
              */
@@ -3065,11 +3053,7 @@ PRIVATE int ac_enqueue_tx_message(hgobj gobj, const char *event, json_t *kw, hgo
     // format output message or directly send
     //gobj_send_event(gobj_bottom_gobj(gobj), "EV_TX_DATA", kw, gobj);
 
-    if(priv->jn_current_request) {
-        json_array_append(priv->jn_request_queue, kw);
-    } else {
-        priv->jn_current_request = json_incref(kw);
-    }
+    json_array_append_new(priv->jn_request_queue, json_deep_copy(kw));
 
     KW_DECREF(kw);
     return 0;
@@ -3097,9 +3081,7 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
      *  Next map
      */
     if(next_map(gobj)<0) {
-        if(priv->jn_current_request) {
-            send_request(gobj);
-        } else {
+        if(!send_request(gobj)) {
             /*
              *  NO map or end of cycle, wait timeout_polling
              */
