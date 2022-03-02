@@ -42,9 +42,12 @@ PRIVATE void on_close_cb(uv_handle_t* handle);
  *---------------------------------------------*/
 PRIVATE sdata_desc_t tattr_desc[] = {
 /*-ATTR-type------------name----------------flag------------default-----description---------- */
-SDATA (ASN_OCTET_STR,   "device",           SDF_RD,         "",         "interface device, ex: can0"),
 SDATA (ASN_COUNTER64,   "txBytes",          SDF_RD,         0,          "Bytes transmitted by this socket"),
 SDATA (ASN_COUNTER64,   "rxBytes",          SDF_RD,         0,          "Bytes received by this socket"),
+SDATA (ASN_OCTET_STR,   "lHost",            SDF_RD,         "",         "Connex compatible, no use"),
+SDATA (ASN_OCTET_STR,   "lPort",            SDF_RD,         "",         "Connex compatible, no use"),
+SDATA (ASN_OCTET_STR,   "rHost",            SDF_RD,         "can0",     "Connex compatible, canbus port (default: can0)"),
+SDATA (ASN_OCTET_STR,   "rPort",            SDF_RD,         "",         "Connex compatible, no use"),
 SDATA (ASN_BOOLEAN,     "exitOnError",      SDF_RD,         1,          "Exit if Listen failed"),
 SDATA (ASN_BOOLEAN,     "use_canfd_frame",  SDF_RD,         0,          "Use canfd_frame instead can_frame"),
 SDATA (ASN_INTEGER,     "timeout_response", SDF_WR,         0,          "TODO Timeout response"),
@@ -238,14 +241,13 @@ PRIVATE int mt_start(hgobj gobj)
     struct sockaddr_can addr;
     struct ifreq ifr;
 
-    const char *device = gobj_read_str_attr(gobj, "device");
+    const char *device = gobj_read_str_attr(gobj, "rHost");
     if(empty_string(device)) {
-        log_error(0,
+        log_error(LOG_OPT_TRACE_STACK,
             "gobj",         "%s", gobj_full_name(gobj),
             "function",     "%s", __FUNCTION__,
             "msgset",       "%s", MSGSET_PARAMETER_ERROR,
-            "msg",          "%s", "What canbus device?",
-            "device",       "%s", device,
+            "msg",          "%s", "canbus device (rHost attr) EMPTY",
             NULL
         );
         close(priv->m_socket);
