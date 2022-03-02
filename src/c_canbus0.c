@@ -689,7 +689,7 @@ PRIVATE GCLASS _gclass = {
     0, //authz_table,
     s_user_trace_level,
     0, //command_table,  // command_table
-    0,  // gcflag
+    gcflag_manual_start, // gcflag
 };
 
 /***************************************************************************
