@@ -289,17 +289,16 @@ PRIVATE int mt_start(hgobj gobj)
     uv_poll_init(loop, &priv->uv_poll, priv->m_socket);
     priv->uv_poll.data = gobj;
 
-    if(gobj_trace_level(gobj) & TRACE_UV) {
-        log_debug_printf(0, ">>> start_read canbus0 p=%p", &priv->uv_poll);
-    }
-    uv_poll_start(&priv->uv_poll, UV_READABLE, on_poll_cb);
-
     gobj_change_state(gobj, "ST_IDLE");
-
     gobj_start(priv->timer);
 
     gobj_publish_event(gobj, "EV_CONNECTED", 0);
     priv->inform_disconnection = TRUE;
+
+    if(gobj_trace_level(gobj) & TRACE_UV) {
+        log_debug_printf(0, ">>> start_read canbus0 p=%p", &priv->uv_poll);
+    }
+    uv_poll_start(&priv->uv_poll, UV_READABLE, on_poll_cb);
 
     return 0;
 }
