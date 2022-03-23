@@ -215,9 +215,9 @@ PRIVATE json_t *cmd_send_message(hgobj gobj, const char *cmd, json_t *kw, hgobj 
             int ln = 0; // TODO ???
             char *bf = 0; // TODO
             GBUFFER *gbuf = gbuf_create(ln, ln, 0, 0);
-            json_t *kw_send = json_pack("{s:I}",
-                "gbuffer", (json_int_t)(size_t)gbuf
-            );
+//             json_t *kw_send = json_pack("{s:I}",
+//                 "gbuffer", (json_int_t)(size_t)gbuf
+//             );
             gbuf_append(gbuf, bf, ln);
             break;
         DEFAULTS
