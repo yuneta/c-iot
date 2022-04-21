@@ -36,6 +36,7 @@ PUBLIC int yuneta_register_c_iot(void)
     gobj_register_gclass(GCLASS_PROT_MODBUS_MASTER);
     gobj_register_gclass(GCLASS_PROT_CANOPEN);
     gobj_register_gclass(GCLASS_GPS_SIM7600);
+    gobj_register_gclass(GCLASS_MQTT);
 
     /*
      *  Mixin uv-gobj

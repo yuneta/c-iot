@@ -31,6 +31,7 @@ extern "C"{
 #include "c_prot_modbus_master.h"
 #include "c_prot_canopen.h"
 #include "c_gps_sim7600.h"
+#include "c_mqtt.h"
 
 /*
  *  Mixin uv-gobj
