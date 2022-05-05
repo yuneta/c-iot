@@ -7997,9 +7997,10 @@ PRIVATE int ac_process_payload_data(hgobj gobj, const char *event, json_t *kw, h
     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
 
     if(gobj_trace_level(gobj) & TRAFFIC) {
-        log_debug_gbuf(LOG_DUMP_INPUT, gbuf, " PAYLOAD %s <== %s",
+        log_debug_gbuf(LOG_DUMP_INPUT, gbuf, "PAYLOAD %s <== %s (accumulated %lu)",
             gobj_short_name(gobj),
-            gobj_short_name(src)
+            gobj_short_name(src),
+            (unsigned long)istream_length(priv->istream_payload)
         );
     }
 
