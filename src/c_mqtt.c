@@ -1971,7 +1971,7 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
          */
         data = istream_extract_matched_data(istream, 0);
         unsigned char byte = *data;
-        frame->frame_length += (byte & 0x7F) * (2*128);
+        frame->frame_length += (byte & 0x7F) * (128*128);
         if(byte & 0x80) {
             frame->must_read_remaining_length_4 = 1;
         }
@@ -1991,7 +1991,7 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
          */
         data = istream_extract_matched_data(istream, 0);
         unsigned char byte = *data;
-        frame->frame_length += (byte & 0x7F) * (3*128);
+        frame->frame_length += (byte & 0x7F) * (128*128*128);
         if(byte & 0x80) {
             log_error(0,
                 "gobj",         "%s", gobj_full_name(gobj),
@@ -7997,7 +7997,7 @@ PRIVATE int ac_process_payload_data(hgobj gobj, const char *event, json_t *kw, h
     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
 
     if(gobj_trace_level(gobj) & TRAFFIC) {
-        log_debug_gbuf(LOG_DUMP_INPUT, gbuf, "%s <== %s",
+        log_debug_gbuf(LOG_DUMP_INPUT, gbuf, " PAYLOAD %s <== %s",
             gobj_short_name(gobj),
             gobj_short_name(src)
         );
