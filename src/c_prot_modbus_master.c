@@ -1510,7 +1510,7 @@ PRIVATE int next_map(hgobj gobj)
 }
 
 /***************************************************************************
- *  Envia current map
+ *  Send current map
  *  If success return 0 and set response timeout
  *  If fails return -1 and don't set timeout
  ***************************************************************************/
@@ -1712,15 +1712,14 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
     }
 
     if(frame->function & 0x80) {
-        int error_code = priv->frame_head.byte_count;
-        frame->payload_length = 0;
+        frame->error_code = priv->frame_head.byte_count;
         log_error(0,
             "gobj",             "%s", gobj_full_name(gobj),
             "function",         "%s", __FUNCTION__,
             "msgset",           "%s", MSGSET_PROTOCOL_ERROR,
             "msg",              "%s", "modbus exception",
-            "error_code",       "%d", error_code,
-            "error_name",       "%s", modbus_exception_name(error_code),
+            "error_code",       "%d", frame->error_code,
+            "error_name",       "%s", modbus_exception_name(frame->error_code),
             "cur_map_",         "%j", priv->cur_map_,
             NULL
         );
@@ -1792,7 +1791,7 @@ PRIVATE int frame_completed(hgobj gobj)
                 NULL
             );
             break;
-    } SWITCHS_END;
+    } SWITCHS_END
 
     return 0;
 }
@@ -2644,6 +2643,7 @@ PRIVATE int build_message_to_publish(hgobj gobj)
         if(!pslv) {
             continue;
         }
+print_json(jn_slave); // TODO TEST
         json_t *jn_conversion = kw_get_list(jn_slave, "conversion", 0, KW_REQUIRED);
         if(!jn_conversion) {
             continue;
@@ -2942,6 +2942,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
     /*---------------------------------------------*
      *
      *---------------------------------------------*/
+    BOOL response_completed = FALSE;
     int lnn;
     BOOL fin = FALSE;
     while(!fin && (lnn=gbuf_leftbytes(gbuf))>0) {
@@ -2964,7 +2965,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                 if(priv->frame_head.header_complete) {
                     if(priv->frame_head.payload_length <= 0) {
                         // Error already logged. Can be an exception
-                        RESET_MACHINE();
+                        response_completed = TRUE;
                         break;
                     }
 
@@ -2987,7 +2988,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                             "payload_length", "%d", priv->frame_head.payload_length,
                             NULL
                         );
-                        RESET_MACHINE();
+                        response_completed = TRUE;
                         break;
                     }
                     istream_read_until_num_bytes(
@@ -3008,8 +3009,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                 }
                 if(istream_is_completed(priv->istream_payload)) {
                     frame_completed(gobj);
-                    RESET_MACHINE();
-                    gobj_change_state(gobj, "ST_SESSION"); // TODO ???
+                    response_completed = TRUE;
                 }
             }
             break;
@@ -3019,22 +3019,27 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
     /*---------------------------*
      *      Next map
      *---------------------------*/
-    if(next_map(gobj)<0) {
-        if(!send_request(gobj)) {
-            /*
-             *  NO map or end of cycle, wait timeout_polling
-             */
-            set_timeout(priv->timer, priv->timeout_polling);
-        }
-    } else {
-        if(poll_modbus(gobj)<0) {
-            /*
-             *  Problemas con el query actual, pasa al siguiente después del timeout
-             */
-            next_map(gobj);
-            set_timeout(priv->timer, priv->timeout_polling);
+    if(response_completed) {
+        RESET_MACHINE()
+        gobj_change_state(gobj, "ST_SESSION");
+
+        if(next_map(gobj)<0) {
+            if(!send_request(gobj)) {
+                /*
+                 *  NO map or end of cycle, wait timeout_polling
+                 */
+                set_timeout(priv->timer, priv->timeout_polling);
+            }
         } else {
-            // timeout set by poll_modbus
+            if(poll_modbus(gobj)<0) {
+                /*
+                 *  Problemas con el query actual, pasa al siguiente después del timeout
+                 */
+                next_map(gobj);
+                set_timeout(priv->timer, priv->timeout_polling);
+            } else {
+                // timeout set by poll_modbus
+            }
         }
     }
 
