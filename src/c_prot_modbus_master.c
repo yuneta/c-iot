@@ -1479,7 +1479,7 @@ PRIVATE int next_map(hgobj gobj)
     if(priv->idx_mapping < priv->max_mapping) {
         // Next map in current slave
         if(gobj_trace_level(gobj) & TRACE_POLLING) {
-            trace_msg("🔊🔊🔊🔊⏩ next map  : slave %d, map %d",
+            trace_msg("🔊🔊🔊🔊⏩ next map  : idx slave %d, idx map %d",
                 priv->idx_slaves, priv->idx_mapping
             );
         }
@@ -1491,7 +1491,7 @@ PRIVATE int next_map(hgobj gobj)
         load_slave_mapping(gobj);
         priv->idx_mapping = 0;;
         if(gobj_trace_level(gobj) & TRACE_POLLING) {
-            trace_msg("🔊🔊🔊🔊🔊🔊🔊🔊⏩ next slave: slave %d, map %d",
+            trace_msg("🔊🔊🔊🔊🔊🔊🔊🔊⏩ next slave: idx slave %d, idx map %d",
                 priv->idx_slaves, priv->idx_mapping
             );
         }
