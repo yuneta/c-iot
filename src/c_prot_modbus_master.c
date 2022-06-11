@@ -1653,6 +1653,7 @@ PRIVATE int framehead_prepare_new_frame(FRAME_HEAD *frame)
      */
     frame->busy = 1;    //in half of header
     frame->header_complete = 0; // Set True when header is completed
+    frame->error_code = 0;
 
     /*
      *  must do
@@ -1789,8 +1790,10 @@ PRIVATE int frame_completed(hgobj gobj)
         CASES("TCP")
             int len = gbuf_leftbytes(gbuf);
             uint8_t *bf = gbuf_get(gbuf, len);
-            if(priv->frame_head.function != MODBUS_FC_WRITE_SINGLE_COIL) {
-                store_modbus_response_data(gobj, bf, len);
+            if(!priv->frame_head.error_code) {
+                if(priv->frame_head.function != MODBUS_FC_WRITE_SINGLE_COIL) {
+                    store_modbus_response_data(gobj, bf, len);
+                }
             }
             break;
 
@@ -1813,7 +1816,9 @@ PRIVATE int frame_completed(hgobj gobj)
                  );
                  return -1;
              }
-             store_modbus_response_data(gobj, bf, len-2);
+             if(!priv->frame_head.error_code) {
+                 store_modbus_response_data(gobj, bf, len - 2);
+             }
              break;
 
         CASES("ASCII")
