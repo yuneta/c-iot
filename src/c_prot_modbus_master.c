@@ -1797,7 +1797,6 @@ PRIVATE int frame_completed(hgobj gobj)
         CASES("RTU")
             int len = gbuf_leftbytes(gbuf);
             uint8_t *bf = gbuf_get(gbuf, len);
-            log_debug_dump(0, (const char *)bf, len, "crc bf ");
             int crc_calculated = crc16_rx(&priv->frame_head, bf, len - 2);
             int crc_received = (bf[len - 2] << 8) | bf[len - 1];
 
