@@ -869,13 +869,50 @@ PRIVATE int send_data(hgobj gobj, GBUFFER *gbuf)
 }
 
 /***************************************************************************
- *
+ *  Calculate crc for tx messages
  ***************************************************************************/
-PRIVATE uint16_t crc16(uint8_t *buffer, uint16_t buffer_length)
+PRIVATE uint16_t crc16_tx(uint8_t *buffer, uint16_t buffer_length)
 {
     uint8_t crc_hi = 0xFF; /* high CRC byte initialized */
     uint8_t crc_lo = 0xFF; /* low CRC byte initialized */
     unsigned int i; /* will index into CRC lookup */
+
+    /* pass through message buffer */
+    while (buffer_length--) {
+        i = crc_hi ^ *buffer++; /* calculate the CRC  */
+        crc_hi = crc_lo ^ table_crc_hi[i];
+        crc_lo = table_crc_lo[i];
+    }
+
+    return (crc_hi << 8 | crc_lo);
+}
+
+/***************************************************************************
+ *  Calculate crc for rx messages
+ ***************************************************************************/
+PRIVATE uint16_t crc16_rx(FRAME_HEAD *frame, uint8_t *buffer, uint16_t buffer_length)
+{
+    uint8_t crc_hi = 0xFF; /* high CRC byte initialized */
+    uint8_t crc_lo = 0xFF; /* low CRC byte initialized */
+    unsigned int i; /* will index into CRC lookup */
+
+    {
+        i = crc_hi ^ frame->slave_id; /* calculate the CRC  */
+        crc_hi = crc_lo ^ table_crc_hi[i];
+        crc_lo = table_crc_lo[i];
+    }
+
+    {
+        i = crc_hi ^ frame->function; /* calculate the CRC  */
+        crc_hi = crc_lo ^ table_crc_hi[i];
+        crc_lo = table_crc_lo[i];
+    }
+
+    {
+        i = crc_hi ^ frame->byte_count; /* calculate the CRC  */
+        crc_hi = crc_lo ^ table_crc_hi[i];
+        crc_lo = table_crc_lo[i];
+    }
 
     /* pass through message buffer */
     while (buffer_length--) {
@@ -1026,7 +1063,6 @@ PRIVATE GBUFFER *build_modbus_request_read_message(hgobj gobj, json_t *jn_slave,
             break;
 
         CASES("RTU")
-        CASES("ASCII")
             req[0] = slave_id;
             req[1] = modbus_function;
             req[2] = address >> 8;
@@ -1034,18 +1070,19 @@ PRIVATE GBUFFER *build_modbus_request_read_message(hgobj gobj, json_t *jn_slave,
             req[4] = size >> 8;
             req[5] = size & 0x00ff;
 
-            uint16_t crc = crc16(req, 6);
-            req[7] = crc >> 8;
-            req[8] = crc & 0x00FF;
-            gbuf_append(gbuf, req, 9);
+            uint16_t crc = crc16_tx(req, 6);
+            req[6] = crc >> 8;
+            req[7] = crc & 0x00FF;
+            gbuf_append(gbuf, req, 8);
             break;
 
+        CASES("ASCII")
         DEFAULTS
             log_error(0,
                 "gobj",         "%s", gobj_full_name(gobj),
                 "function",     "%s", __FUNCTION__,
                 "msgset",       "%s", MSGSET_PARAMETER_ERROR,
-                "msg",          "%s", "Modbus protocol UNKNOWN",
+                "msg",          "%s", "Modbus protocol NOT IMPLEMENTED",
                 "protocol",     "%s", priv->modbus_protocol,
                 NULL
             );
@@ -1159,7 +1196,7 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
 //             req[4] = size >> 8;
 //             req[5] = size & 0x00ff;
 //
-//             uint16_t crc = crc16(req, 6);
+//             uint16_t crc = crc16_tx(req, 6);
 //             req[7] = crc >> 8;
 //             req[8] = crc & 0x00FF;
 //             gbuf_append(gbuf, req, 9);
@@ -1657,7 +1694,7 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
 
             DEFAULTS
                 break;
-        } SWITCHS_END;
+        } SWITCHS_END
 
         consumed = istream_consume(istream, bf, len);
         total_consumed += consumed;
@@ -1687,7 +1724,7 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
                             "gobj",         "%s", gobj_full_name(gobj),
                             "function",     "%s", __FUNCTION__,
                             "msgset",       "%s", MSGSET_INTERNAL_ERROR,
-                            "msg",          "%s", "MIERDAAAAAAAAAAAAAA",
+                            "msg",          "%s", "MERDE",
                             "payload",      "%d", (int)frame->payload_length,
                             "byte_count",   "%d", (int)head->byte_count,
                             NULL
@@ -1708,11 +1745,12 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
 
             DEFAULTS
                 break;
-        } SWITCHS_END;
+        } SWITCHS_END
     }
 
     if(frame->function & 0x80) {
         frame->error_code = priv->frame_head.byte_count;
+        frame->payload_length = sizeof(uint16_t); // + crc
         log_error(0,
             "gobj",             "%s", gobj_full_name(gobj),
             "function",         "%s", __FUNCTION__,
@@ -1757,37 +1795,35 @@ PRIVATE int frame_completed(hgobj gobj)
             break;
 
         CASES("RTU")
+            int len = gbuf_leftbytes(gbuf);
+            uint8_t *bf = gbuf_get(gbuf, len);
+            log_debug_dump(0, (const char *)bf, len, "crc bf ");
+            int crc_calculated = crc16_rx(&priv->frame_head, bf, len - 2);
+            int crc_received = (bf[len - 2] << 8) | bf[len - 1];
+
+             /* Check CRC of msg */
+             if (crc_calculated != crc_received) {
+                 log_error(0,
+                    "gobj",             "%s", gobj_full_name(gobj),
+                    "function",         "%s", __FUNCTION__,
+                    "msgset",           "%s", MSGSET_PROTOCOL_ERROR,
+                    "msg",              "%s", "CRC error",
+                    "crc received",     "%d", crc_received,
+                    "crc calculated",   "%d", crc_calculated,
+                    NULL
+                 );
+                 return -1;
+             }
+             store_modbus_response_data(gobj, bf, len-2);
+             break;
+
         CASES("ASCII")
-            int len = gbuf_leftbytes(gbuf) - sizeof(uint16_t);  // - crc
-            gbuf_get(gbuf, len);
-// TODO            crc_calculated = crc16(msg, msg_length - 2);
-//             crc_received = (msg[msg_length - 2] << 8) | msg[msg_length - 1];
-//
-//             /* Check CRC of msg */
-//             if (crc_calculated == crc_received) {
-//                 return msg_length;
-//             } else {
-//                 if (ctx->debug) {
-//                     fprintf(stderr, "ERROR CRC received 0x%0X != CRC calculated 0x%0X\n",
-//                             crc_received, crc_calculated);
-//                 }
-//
-//                 if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_PROTOCOL) {
-//                     _modbus_rtu_flush(ctx);
-//                 }
-//                 errno = EMBBADCRC;
-//                 return -1;
-//             }
-
-//             store_modbus_response_data(gobj, bf, len);
-//             break;
-
         DEFAULTS
             log_error(LOG_OPT_TRACE_STACK,
                 "gobj",         "%s", __FILE__,
                 "function",     "%s", __FUNCTION__,
                 "msgset",       "%s", MSGSET_PARAMETER_ERROR,
-                "msg",          "%s", "Protocol modbus UNKNOWN",
+                "msg",          "%s", "Protocol modbus NOT IMPLEMENTED",
                 NULL
             );
             break;
@@ -2643,7 +2679,6 @@ PRIVATE int build_message_to_publish(hgobj gobj)
         if(!pslv) {
             continue;
         }
-print_json(jn_slave); // TODO TEST
         json_t *jn_conversion = kw_get_list(jn_slave, "conversion", 0, KW_REQUIRED);
         if(!jn_conversion) {
             continue;
