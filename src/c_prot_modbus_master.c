@@ -2484,10 +2484,11 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
     }
 
     int address = kw_get_int(jn_variable, "address", -1, KW_REQUIRED|KW_WILD_NUMBER);
-    int multiplier = kw_get_int(jn_variable, "multiplier", 1, KW_WILD_NUMBER);
-    if(multiplier == 0) {
-        multiplier = 1;
+    float multiplier = kw_get_real(jn_variable, "multiplier", 1, KW_WILD_NUMBER);
+    if(multiplier == 0.0) {
+        multiplier = 1.0;
     }
+
     const char *format = kw_get_str(jn_variable, "format", "", KW_REQUIRED);
     variable_format_t variable_format = get_variable_format(gobj, format);
 
@@ -2536,12 +2537,22 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                 if(pv) {
                     if(variable_format == FORMAT_INT16) {
                         int16_t v = endian_16(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            float v_ = (float)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     } else {
                         uint16_t v = endian_16(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            float v_ = (float)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     }
                 }
             }
@@ -2569,12 +2580,22 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                 if(pv) {
                     if(variable_format == FORMAT_INT32) {
                         int32_t v = endian_32(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            float v_ = (float)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     } else {
                         uint32_t v = endian_32(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            float v_ = (float)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     }
                 }
             }
@@ -2602,12 +2623,22 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                 if(pv) {
                     if(variable_format == FORMAT_INT64) {
                         int64_t v = endian_64(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            double v_ = (double)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     } else {
                         uint64_t v = endian_64(endian_format, (uint8_t *)pv);
-                        v = v*multiplier;
-                        jn_value = json_integer(v);
+                        if(multiplier < 1.0 &&  multiplier > 0.0) {
+                            double v_ = (double)v * multiplier;
+                            jn_value = json_real(v_);
+                        } else {
+                            v = v*multiplier;
+                            jn_value = json_integer(v);
+                        }
                     }
                 }
             }
