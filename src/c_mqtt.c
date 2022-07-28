@@ -5786,6 +5786,7 @@ PRIVATE int handle_connect(hgobj gobj, GBUFFER *gbuf)
     /*-------------------------------------------*
      *      Client id
      *-------------------------------------------*/
+    char uuid[60];
     char *client_id = NULL;
     BOOL assigned_id = FALSE;
     uint16_t client_id_len;
@@ -5831,7 +5832,8 @@ PRIVATE int handle_connect(hgobj gobj, GBUFFER *gbuf)
                 }
                 return -1;
             } else {
-                client_id = (char *)get_random_uuid();
+                create_uuid(uuid, sizeof(uuid));
+                client_id = uuid;
                 if(!client_id) {
                     log_error(0,
                         "gobj",         "%s", gobj_full_name(gobj),
