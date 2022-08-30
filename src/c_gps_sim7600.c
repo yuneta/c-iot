@@ -957,7 +957,8 @@ PRIVATE int build_gps_message(hgobj gobj, char *s)
     if(gobj_trace_level(gobj) & TRACE_MESSAGES) {
         log_debug_json(0, jn_gps_mesage, "gps_message");
     }
-    return gobj_publish_event(gobj, "EV_ON_MESSAGE", jn_gps_mesage);
+    gobj_publish_event(gobj, "EV_ON_MESSAGE", jn_gps_mesage);
+    return 0;
 }
 
 

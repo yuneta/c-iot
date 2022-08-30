@@ -302,7 +302,8 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
 //     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, FALSE);
 
     // TODO
-    return gobj_publish_event(gobj, "EV_ON_MESSAGE", kw);
+    gobj_publish_event(gobj, "EV_ON_MESSAGE", kw);
+    return 0;
 }
 
 /***************************************************************************
