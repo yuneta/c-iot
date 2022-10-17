@@ -502,6 +502,7 @@ PRIVATE void ws_close(hgobj gobj, int code);
 PRIVATE int framehead_prepare_new_frame(FRAME_HEAD *frame);
 PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, char *bf, int len);
 PRIVATE int frame_completed(hgobj gobj);
+PRIVATE int set_client_disconnected(hgobj gobj);
 
 /***************************************************************************
  *          Data: config, public data, private data
@@ -926,6 +927,8 @@ PRIVATE int mt_stop(hgobj gobj)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
+    set_client_disconnected(gobj);
+
     if(priv->timer) {
         clear_timeout(priv->timer);
         gobj_stop(priv->timer);
@@ -957,8 +960,8 @@ PRIVATE void mt_destroy(hgobj gobj)
         priv->istream_payload = 0;
     }
 
-    JSON_DECREF(priv->client);
-    JSON_DECREF(priv->jn_alias_list);
+    priv->client = 0;
+    JSON_DECREF(priv->jn_alias_list)
 
     dl_flush(&priv->dl_msgs_in, db_free_client_msg);
     dl_flush(&priv->dl_msgs_out, db_free_client_msg);
@@ -5256,6 +5259,8 @@ PRIVATE int handle_auth(hgobj gobj, GBUFFER *gbuf)
 //         }
 //     }
 
+
+
 /***************************************************************************
  *
  ***************************************************************************/
@@ -5265,6 +5270,22 @@ PRIVATE int save_client(hgobj gobj)
 
     if(!priv->assigned_id && !empty_string(priv->client_id)) {
         gobj_save_resource(priv->gobj_mqtt_clients, priv->client_id, priv->client, 0);
+    }
+    return 0;
+}
+
+/***************************************************************************
+ *
+ ***************************************************************************/
+PRIVATE int set_client_disconnected(hgobj gobj)
+{
+    PRIVATE_DATA *priv = gobj_priv_data(gobj);
+    if(priv->client) {
+        kw_set_dict_value(priv->client, "isConnected", json_false());
+        kw_set_dict_value(priv->client, "_gobj", json_integer(0));
+        kw_set_dict_value(priv->client, "_gobj_bottom", json_integer(0));
+        save_client(gobj);
+        priv->client = 0;
     }
     return 0;
 }
@@ -5304,7 +5325,7 @@ PRIVATE int connect_on_authorised(
         kw_set_dict_value(client, "assigned_id", json_true());
         kw_set_dict_value(client, "subscriptions", json_object());
     } else {
-        client = gobj_get_resource(priv->gobj_mqtt_clients, priv->client_id, 0, 0);
+        client = gobj_get_resource(priv->gobj_mqtt_clients, priv->client_id, 0, 0); // NOT YOURS
         if(!client) {
             // New client (device)
             json_t *kw_client = json_pack("{s:s, s:b, s:i, s:{}}",
@@ -7823,12 +7844,8 @@ PRIVATE int ac_disconnected(hgobj gobj, const char *event, json_t *kw, hgobj src
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
-    if(priv->client) {
-        kw_set_dict_value(priv->client, "isConnected", json_false());
-        kw_set_dict_value(priv->client, "_gobj", json_integer(0));
-        kw_set_dict_value(priv->client, "_gobj_bottom", json_integer(0));
-        save_client(gobj);
-    }
+    set_client_disconnected(gobj);
+
     JSON_DECREF(priv->jn_alias_list);
 
     gobj_reset_volatil_attrs(gobj);
@@ -7854,8 +7871,7 @@ PRIVATE int ac_disconnected(hgobj gobj, const char *event, json_t *kw, hgobj src
         clear_timeout(priv->timer);
     }
 
-    JSON_DECREF(priv->client);
-    JSON_DECREF(priv->jn_alias_list);
+    JSON_DECREF(priv->jn_alias_list)
 
     gobj_write_str_attr(gobj, "client_id", "");
     gobj_write_str_attr(gobj, "username", "");
