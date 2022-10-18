@@ -14,6 +14,7 @@ extern "C"{
  *  core
  */
 #include <yuneta.h>
+#include "msglog_iot.h"
 #include "yuneta_iot_version.h"
 #include "yuneta_iot_register.h"
 

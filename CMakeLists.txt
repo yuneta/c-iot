@@ -52,6 +52,7 @@ set (SRCS
 
 
 set (HDRS
+    src/msglog_iot.h
     src/yuneta_iot.h
     src/yuneta_iot_version.h
     src/yuneta_iot_register.h
