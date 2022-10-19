@@ -27,7 +27,6 @@
 #pragma once
 
 #include <yuneta.h>
-#include "msglog_iot.h"
 
 #ifdef __cplusplus
 extern "C"{
