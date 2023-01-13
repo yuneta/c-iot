@@ -1116,7 +1116,7 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
     uint8_t req[12] = {0};
     uint8_t slave_id = (uint8_t)kw_get_int(jn_request, "id", 1, 0);
     uint16_t address = kw_get_int(jn_request, "address", 0, KW_REQUIRED|KW_WILD_NUMBER);
-    //uint16_t size = kw_get_int(jn_request, "size", 0, KW_REQUIRED|KW_WILD_NUMBER);
+//     uint16_t size = kw_get_int(jn_request, "size", 1, KW_REQUIRED|KW_WILD_NUMBER);
     // TODO value: implement all write types
     uint16_t value = kw_get_int(jn_request, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
     const char *type = kw_get_str(jn_request, "type", "", KW_REQUIRED);
@@ -1128,9 +1128,8 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
             modbus_function = MODBUS_FC_WRITE_SINGLE_COIL;
             break;
 
-// TODO implement all write types
-//         case TYPE_HOLDING_REGISTER:
-//             modbus_function = MODBUS_FC_WRITE_SINGLE_REGISTER;
+        case TYPE_HOLDING_REGISTER:
+            modbus_function = MODBUS_FC_WRITE_SINGLE_REGISTER;
 //             if(size > MODBUS_MAX_WRITE_REGISTERS) {
 //                 log_error(0,
 //                     "gobj",         "%s", gobj_full_name(gobj),
@@ -1142,14 +1141,14 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
 //                 );
 //                 size = MODBUS_MAX_WRITE_REGISTERS;
 //             }
-//             break;
+            break;
 
         default:
             log_error(LOG_OPT_TRACE_STACK,
                 "gobj",         "%s", gobj_full_name(gobj),
                 "function",     "%s", __FUNCTION__,
                 "msgset",       "%s", MSGSET_PARAMETER_ERROR,
-                "msg",          "%s", "Modbus object type NOT SUPPORTE to write",
+                "msg",          "%s", "Modbus object type NOT SUPPORTED to write",
                 "type",         "%s", type,
                 NULL
             );
