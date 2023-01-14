@@ -1116,31 +1116,78 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
     uint8_t req[12] = {0};
     uint8_t slave_id = (uint8_t)kw_get_int(jn_request, "id", 1, 0);
     uint16_t address = kw_get_int(jn_request, "address", 0, KW_REQUIRED|KW_WILD_NUMBER);
-//     uint16_t size = kw_get_int(jn_request, "size", 1, KW_REQUIRED|KW_WILD_NUMBER);
-    // TODO value: implement all write types
-    uint16_t value = kw_get_int(jn_request, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    uint16_t size = kw_get_int(jn_request, "size", 1, KW_WILD_NUMBER);
+    if(size == 0 || size > MODBUS_MAX_WRITE_REGISTERS) {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+            "msg",          "%s", "Modbus Too many discrete values to write or zero",
+            "size",         "%d", size,
+            NULL
+        );
+        return 0;
+    }
+    json_t *jn_value = kw_get_dict_value(jn_request, "value", 0, KW_REQUIRED);
+    if(!jn_value) {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+            "msg",          "%s", "Modbus write needs a value",
+            NULL
+        );
+        return 0;
+    }
+
+    uint16_t value;
+    if(json_is_integer(jn_value) || json_is_string(jn_value)) {
+        value = kw_get_int(jn_value, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    } else if(json_is_array(jn_value)) {
+        if(json_array_size(jn_value) != size) {
+            log_error(0,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+                "msg",          "%s", "Modbus write array size not match",
+                "size",         "%d", size,
+                "json_size",    "%d", json_array_size(jn_value),
+                NULL
+            );
+            log_debug_json(0, jn_value, "Modbus write array size not match");
+            return 0;
+        }
+        value = kw_get_int(jn_value, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    } else {
+        log_error(0,
+            "gobj",         "%s", gobj_full_name(gobj),
+            "function",     "%s", __FUNCTION__,
+            "msgset",       "%s", MSGSET_PARAMETER_ERROR,
+            "msg",          "%s", "Modbus json value type not valid",
+            NULL
+        );
+        return 0;
+    }
+
     const char *type = kw_get_str(jn_request, "type", "", KW_REQUIRED);
     int object_type = get_object_type(gobj, type);
 
     uint8_t modbus_function = 0;
     switch(object_type) {
         case TYPE_COIL:
-            modbus_function = MODBUS_FC_WRITE_SINGLE_COIL;
+            if(size == 1) {
+                modbus_function = MODBUS_FC_WRITE_SINGLE_COIL;
+            } else {
+                modbus_function = MODBUS_FC_WRITE_MULTIPLE_COILS;
+            }
             break;
 
         case TYPE_HOLDING_REGISTER:
-            modbus_function = MODBUS_FC_WRITE_SINGLE_REGISTER;
-//             if(size > MODBUS_MAX_WRITE_REGISTERS) {
-//                 log_error(0,
-//                     "gobj",         "%s", gobj_full_name(gobj),
-//                     "function",     "%s", __FUNCTION__,
-//                     "msgset",       "%s", MSGSET_PARAMETER_ERROR,
-//                     "msg",          "%s", "Modbus Too many discrete inputs to write",
-//                     "size",         "%d", size,
-//                     NULL
-//                 );
-//                 size = MODBUS_MAX_WRITE_REGISTERS;
-//             }
+            if(size == 1) {
+                modbus_function = MODBUS_FC_WRITE_SINGLE_REGISTER;
+            } else {
+                modbus_function = MODBUS_FC_WRITE_MULTIPLE_REGISTERS;
+            }
             break;
 
         default:
@@ -1172,8 +1219,8 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
             req[2] = 0;
             req[3] = 0;
 
-            /* Substract the header length to the message length */
-            int mbap_length = 12 - 6;
+            /* Subtract the header length to the message length */
+            int mbap_length = 10 - 6 + size * 2;
 
             req[4] = mbap_length >> 8;
             req[5] = mbap_length & 0x00FF;
@@ -1184,6 +1231,14 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
             req[10] = value >> 8;
             req[11] = value & 0x00ff;
             gbuf_append(gbuf, req, 12);
+
+            while(size > 0) {
+                uint16_t v = value; // TODO
+                req[0] = v >> 8;
+                req[1] = v & 0x00ff;
+                gbuf_append(gbuf, req, 2);
+                size--;
+            }
             break;
 
         CASES("RTU")
