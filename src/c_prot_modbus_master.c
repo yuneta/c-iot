@@ -10,9 +10,11 @@ Object type         Access      Size        Address Space   Other names         
 "Discrete input"    Only-read   1 bit       0x0000 – 0xFFFF "input_status"      1xxxx
 "Input register"    Only-read   16 bits     0x0000 – 0xFFFF "input_register"    2xxxx
 "Holding register"  Read-write  16 bits     0x0000 – 0xFFFF "holding_register"  3xxxx
-*/
 
-/*
+
+Some description of protocol
+https://www.fernhillsoftware.com/help/drivers/modbus/modbus-protocol.html
+https://modbus.org/docs/Modbus_Application_Protocol_V1_1b3.pdf
 
 Example of modbus configuration:
 
@@ -206,7 +208,7 @@ typedef struct {
     uint16_t length;
     uint8_t slave_id;
     uint8_t function;
-    uint8_t byte_count;
+    uint8_t byte_count; // TODO en las funciones WRITE no viene byte_count (1), viene addr or value (2 bytes)
 } head_tcp_t;
 
 #pragma pack()
@@ -1048,7 +1050,7 @@ PRIVATE GBUFFER *build_modbus_request_read_message(hgobj gobj, json_t *jn_slave,
             req[2] = 0;
             req[3] = 0;
 
-            /* Substract the header length to the message length */
+            /* Subtract the header length to the message length */
             int mbap_length = 12 - 6;
 
             req[4] = mbap_length >> 8;
@@ -1142,8 +1144,9 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
 
     uint16_t value;
     if(json_is_integer(jn_value) || json_is_string(jn_value)) {
-        value = kw_get_int(jn_value, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+        value = (uint16_t)jn2integer(jn_value);
     } else if(json_is_array(jn_value)) {
+        // TODO not tested
         if(json_array_size(jn_value) != size) {
             log_error(0,
                 "gobj",         "%s", gobj_full_name(gobj),
@@ -1157,7 +1160,7 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
             log_debug_json(0, jn_value, "Modbus write array size not match");
             return 0;
         }
-        value = kw_get_int(jn_value, "value", 0, KW_REQUIRED|KW_WILD_NUMBER);
+        value = (uint16_t) jn2integer(json_array_get(jn_value, 0));
     } else {
         log_error(0,
             "gobj",         "%s", gobj_full_name(gobj),
@@ -1228,14 +1231,14 @@ PRIVATE GBUFFER *build_modbus_request_write_message(hgobj gobj, json_t *jn_reque
             req[7] = modbus_function;
             req[8] = address >> 8;
             req[9] = address & 0x00ff;
-            req[10] = value >> 8;
+            req[10] = value >> 8;           // Add the first value, always come
             req[11] = value & 0x00ff;
             gbuf_append(gbuf, req, 12);
 
-            while(size > 0) {
-                uint16_t v = value; // TODO
-                req[0] = v >> 8;
-                req[1] = v & 0x00ff;
+            for(int i=1; i<size; i++) { // TODO No tested!!!
+                value = (uint16_t) jn2integer(json_array_get(jn_value, i));
+                req[0] = value >> 8;
+                req[1] = value & 0x00ff;
                 gbuf_append(gbuf, req, 2);
                 size--;
             }
@@ -1771,22 +1774,7 @@ PRIVATE int framehead_consume(hgobj gobj, FRAME_HEAD *frame, istream istream, ch
                 frame->slave_id = head->slave_id;
                 frame->byte_count = head->byte_count;
                 head->length = ntohs(head->length);
-                frame->payload_length = head->length - 3; // TODO head->byte_count;
-
-                if(frame->payload_length != head->byte_count) {
-                    if(frame->function != MODBUS_FC_WRITE_SINGLE_COIL) {
-                        log_error(0,
-                            "gobj",         "%s", gobj_full_name(gobj),
-                            "function",     "%s", __FUNCTION__,
-                            "msgset",       "%s", MSGSET_INTERNAL_ERROR,
-                            "msg",          "%s", "MERDE",
-                            "payload",      "%d", (int)frame->payload_length,
-                            "byte_count",   "%d", (int)head->byte_count,
-                            NULL
-                        );
-                    }
-                }
-
+                frame->payload_length = head->length - 3;
                 break;
 
             CASES("RTU")
@@ -1845,9 +1833,7 @@ PRIVATE int frame_completed(hgobj gobj)
             int len = gbuf_leftbytes(gbuf);
             uint8_t *bf = gbuf_get(gbuf, len);
             if(!priv->frame_head.error_code) {
-                if(priv->frame_head.function != MODBUS_FC_WRITE_SINGLE_COIL) {
-                    store_modbus_response_data(gobj, bf, len);
-                }
+                store_modbus_response_data(gobj, bf, len);
             }
             break;
 
@@ -1994,30 +1980,40 @@ PRIVATE int store_modbus_response_data(hgobj gobj, uint8_t *bf, int len)
 {
     PRIVATE_DATA *priv = gobj_priv_data(gobj);
 
-    uint8_t req_slave_id = (uint8_t)kw_get_int(priv->cur_slave_, "id", 0, KW_REQUIRED);
-    uint16_t req_address = kw_get_int(priv->cur_map_, "address", 0, KW_REQUIRED|KW_WILD_NUMBER);
-    uint16_t req_size = kw_get_int(priv->cur_map_, "size", 0, KW_REQUIRED|KW_WILD_NUMBER);
-
     int slave_id = priv->frame_head.slave_id;
     int modbus_function = priv->frame_head.function;
     int byte_count = priv->frame_head.byte_count;
 
+    if(modbus_function == MODBUS_FC_READ_COILS ||
+        modbus_function == MODBUS_FC_READ_DISCRETE_INPUTS ||
+        modbus_function == MODBUS_FC_READ_HOLDING_REGISTERS ||
+        modbus_function == MODBUS_FC_READ_INPUT_REGISTERS ||
+        modbus_function == MODBUS_FC_WRITE_AND_READ_REGISTERS
+    ) { // TODO not sure
+        if(byte_count != len) {
+            log_error(0,
+                "gobj",         "%s", gobj_full_name(gobj),
+                "function",     "%s", __FUNCTION__,
+                "msgset",       "%s", MSGSET_PROTOCOL_ERROR,
+                "msg",          "%s", "byte_count != len",
+                "byte_count",   "%d", byte_count,
+                "len",          "%d", len,
+                NULL
+            );
+            return -1;
+        }
+    } else {
+        // TODO by now write functions not checked
+        return 0;
+    }
+
+    uint8_t req_slave_id = (uint8_t)kw_get_int(priv->cur_slave_, "id", 0, KW_REQUIRED);
+    uint16_t req_address = kw_get_int(priv->cur_map_, "address", 0, KW_REQUIRED|KW_WILD_NUMBER);
+    uint16_t req_size = kw_get_int(priv->cur_map_, "size", 0, KW_REQUIRED|KW_WILD_NUMBER);
+
     /*------------------------------*
      *      Check protocol
      *------------------------------*/
-    if(byte_count != len) {
-        log_error(0,
-            "gobj",         "%s", gobj_full_name(gobj),
-            "function",     "%s", __FUNCTION__,
-            "msgset",       "%s", MSGSET_PROTOCOL_ERROR,
-            "msg",          "%s", "byte_count != len",
-            "byte_count",   "%d", byte_count,
-            "len",          "%d", len,
-            NULL
-        );
-        return -1;
-    }
-
     if(req_slave_id != slave_id) {
         log_error(0,
             "gobj",         "%s", gobj_full_name(gobj),
@@ -2202,9 +2198,6 @@ PRIVATE int store_modbus_response_data(hgobj gobj, uint8_t *bf, int len)
                 NULL
             );
             break;
-    }
-
-    if(gobj_trace_level(gobj) & TRACE_DECODE) {
     }
 
     return 0;
@@ -3080,6 +3073,13 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                     // Some error in parsing
                     // on error do break the connection
                     fin = TRUE;
+                    log_error(0,
+                        "gobj",         "%s", gobj_full_name(gobj),
+                        "function",     "%s", __FUNCTION__,
+                        "msgset",       "%s", MSGSET_PROTOCOL_ERROR,
+                        "msg",          "%s", "modbus framehead_consume() FAILED",
+                        NULL
+                    );
                     gobj_send_event(gobj_bottom_gobj(gobj), "EV_DROP", 0, gobj);
                     break;
                 } else if (n > 0) {
