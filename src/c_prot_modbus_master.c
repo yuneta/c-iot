@@ -93,6 +93,7 @@ typedef enum {
     FORMAT_UINT64       = 6,
     FORMAT_FLOAT        = 7,
     FORMAT_DOUBLE       = 8,
+    FORMAT_STRING       = 9,
 } variable_format_t;
 
 /* Modbus function codes */
@@ -2285,6 +2286,10 @@ PRIVATE variable_format_t get_variable_format(hgobj gobj, const char *format_)
         CASES("double")
             variable_format = FORMAT_DOUBLE;
             break;
+        CASES("str")
+        CASES("string")
+            variable_format = FORMAT_STRING;
+            break;
         DEFAULTS
             log_error(0,
                 "gobj",         "%s", gobj_full_name(gobj),
@@ -2742,6 +2747,43 @@ PRIVATE json_t *get_variable_value(hgobj gobj, slave_data_t *pslv, json_t *jn_va
                 }
             }
             break;
+
+        case FORMAT_STRING:
+            {
+                cell_control_t *cell_control = &pslv->control[object_type][address];
+                cell_control->updated = 0;
+                int size = (int)kw_get_int(jn_variable, "multiplier", 1, KW_WILD_NUMBER);
+                GBUFFER *gbuf_string = gbuf_create(size*2, size*2, 0, 0);
+
+                for(int i=0; i<size; i++) {
+                    uint16_t *pv = 0;
+                    switch(object_type) {
+                        case TYPE_INPUT_REGISTER:
+                            pv = &pslv->input_register[address+i];
+                            break;
+                        case TYPE_HOLDING_REGISTER:
+                            pv = &pslv->holding_register[address+i];
+                            break;
+                    }
+
+                    uint32_t word = endian_16(endian_format, (uint8_t *)pv);
+                    uint8_t b1 = (uint8_t)(word >> 8); // get the higher byte;
+                    uint8_t b2 = (uint8_t)(word & 0xFF); // get the lower byte
+                    // convert the nulls into space
+                    if(b1==0) {
+                        b1 = ' ';
+                    }
+                    if(b2==0) {
+                        b2 = ' ';
+                    }
+                    gbuf_append(gbuf_string, &b1, 1);
+                    gbuf_append(gbuf_string, &b2, 1);
+                }
+                left_justify(gbuf_cur_rd_pointer(gbuf_string));
+                jn_value = json_string(gbuf_cur_rd_pointer(gbuf_string));
+                GBUF_DECREF(gbuf_string)
+            }
+            break;
     }
 
     return jn_value;
@@ -2899,6 +2941,9 @@ PRIVATE int check_conversion_variable(hgobj gobj, slave_data_t *pslv, json_t *jn
             break;
         case FORMAT_DOUBLE:
             compound_value = 4;
+            break;
+        case FORMAT_STRING:
+            compound_value = (int)kw_get_int(jn_variable, "multiplier", 1, KW_WILD_NUMBER);
             break;
     }
 
