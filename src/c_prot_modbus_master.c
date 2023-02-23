@@ -3052,9 +3052,6 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
      *   Recupera el frame
      *---------------------------------------------*/
     GBUFFER *gbuf = (GBUFFER *)(size_t)kw_get_int(kw, "gbuffer", 0, 0);
-    if(gobj_trace_level(gobj) & TRACE_TRAFFIC) {
-        log_debug_gbuf(LOG_DUMP_INPUT, gbuf, "%s", gobj_short_name(src));
-    }
 
     /*---------------------------------------------*
      *
@@ -3132,6 +3129,11 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                     gbuf_get(gbuf, consumed);  // take out the bytes consumed
                 }
                 if(istream_is_completed(priv->istream_payload)) {
+                    if(gobj_trace_level(gobj) & TRACE_TRAFFIC) {
+                        log_debug_gbuf(LOG_DUMP_INPUT,
+                           istream_get_gbuffer(priv->istream_payload), "%s", gobj_short_name(src)
+                       );
+                    }
                     frame_completed(gobj);
                     response_completed = TRUE;
                 }
