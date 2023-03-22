@@ -3202,22 +3202,22 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
         RESET_MACHINE()
         gobj_change_state(gobj, "ST_SESSION");
 
-        if(next_map(gobj)<0) {
-            if(!send_request(gobj)) {
+        if(!send_request(gobj)) {
+            if(next_map(gobj)<0) {
                 /*
                  *  NO map or end of cycle, wait timeout_polling
                  */
                 set_timeout(priv->timer, priv->timeout_polling);
-            }
-        } else {
-            if(poll_modbus(gobj)<0) {
-                /*
-                 *  Problemas con el query actual, pasa al siguiente después del timeout
-                 */
-                next_map(gobj);
-                set_timeout(priv->timer, priv->timeout_polling);
             } else {
-                // timeout set by poll_modbus
+                if(poll_modbus(gobj)<0) {
+                    /*
+                     *  Problemas con el query actual, pasa al siguiente después del timeout
+                     */
+                    next_map(gobj);
+                    set_timeout(priv->timer, priv->timeout_polling);
+                } else {
+                    // timeout set by poll_modbus
+                }
             }
         }
     }
@@ -3264,22 +3264,22 @@ PRIVATE int ac_timeout_polling(hgobj gobj, const char *event, json_t *kw, hgobj 
     /*
      *  Next map
      */
-    if(next_map(gobj)<0) {
-        if(!send_request(gobj)) {
+    if(!send_request(gobj)) {
+        if(next_map(gobj)<0) {
             /*
              *  NO map or end of cycle, wait timeout_polling
              */
             set_timeout(priv->timer, priv->timeout_polling);
-        }
-    } else {
-        if(poll_modbus(gobj)<0) {
-            /*
-             *  Problemas con el query actual, pasa al siguiente después del timeout
-             */
-            next_map(gobj);
-            set_timeout(priv->timer, priv->timeout_polling);
         } else {
-            // timeout set by poll_modbus
+            if(poll_modbus(gobj)<0) {
+                /*
+                 *  Problemas con el query actual, pasa al siguiente después del timeout
+                 */
+                next_map(gobj);
+                set_timeout(priv->timer, priv->timeout_polling);
+            } else {
+                // timeout set by poll_modbus
+            }
         }
     }
 
