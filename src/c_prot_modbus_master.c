@@ -394,12 +394,14 @@ enum {
     TRACE_TRAFFIC   = 0x0002,
     TRACE_POLLING   = 0x0004,
     TRACE_DECODE    = 0x0008,
+    TRACE_SEND      = 0x0010,
 };
 PRIVATE const trace_level_t s_user_trace_level[16] = {
 {"messages",        "Trace messages"},
 {"traffic",         "Trace dump traffic"},
 {"polling",         "Trace polling"},
 {"decode",          "Trace decoding"},
+{"send",            "Trace send"},
 {0, 0},
 };
 
@@ -1685,6 +1687,12 @@ PRIVATE BOOL send_request(hgobj gobj)
     }
 
     json_t *jn_current_request = kw_get_list_value(priv->jn_request_queue, 0, KW_EXTRACT);
+    if(gobj_trace_level(gobj) & TRACE_SEND) {
+        log_debug_json(0, jn_current_request, "sending to %s:%s",
+           gobj_read_str_attr(gobj_bottom_gobj(gobj), "rHost"),
+           gobj_read_str_attr(gobj_bottom_gobj(gobj), "rPort")
+        );
+    }
     GBUFFER *gbuf = build_modbus_request_write_message(gobj, jn_current_request);
     JSON_DECREF(jn_current_request);
     send_data(gobj, gbuf);
