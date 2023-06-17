@@ -3215,7 +3215,7 @@ PRIVATE int ac_rx_data(hgobj gobj, const char *event, json_t *kw, hgobj src)
                 "msg",          "%s", "Modbus: response too large",
                 NULL
             );
-            log_debug_gbuf(0, gbuf, "Modbus: response too large");
+            log_debug_full_gbuf(0, gbuf, "Modbus: response too large");
         }
 
         /*---------------------------------------------*
