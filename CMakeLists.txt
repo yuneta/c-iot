@@ -1,8 +1,8 @@
 ##############################################
 #   CMake
 ##############################################
-project(yuneta-iot C)
 cmake_minimum_required(VERSION 3.0)
+project(yuneta-iot C)
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
 
