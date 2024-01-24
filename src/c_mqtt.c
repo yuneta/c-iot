@@ -6000,6 +6000,9 @@ PRIVATE int handle_connect(hgobj gobj, GBUFFER *gbuf)
             password_flag,
             keepalive
         );
+        if(priv->gbuf_will_payload) {
+            log_debug_gbuf(0, priv->gbuf_will_payload, "gbuf_will_payload");
+        }
     }
 
     if(gobj_read_bool_attr(gobj, "use_username_as_clientid")) {
