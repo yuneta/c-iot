@@ -4835,7 +4835,10 @@ PRIVATE int XXX_sub__messages_queue(
 
     GBUFFER *gbuf_message = gbuf_create(stored->payloadlen, stored->payloadlen, 0, 0);
     if(gbuf_message) {
-        gbuf_append(gbuf_message, stored->payload, stored->payloadlen);
+        if(stored->payloadlen > 0) {
+            // Can became without payload
+            gbuf_append(gbuf_message, stored->payload, stored->payloadlen);
+        }
         json_t *kw = json_pack("{s:s, s:s, s:I}",
             "mqtt_action", "publishing",
             "topic", topic_name,
