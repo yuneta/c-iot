@@ -963,6 +963,7 @@ PRIVATE void mt_destroy(hgobj gobj)
 
     priv->client = 0;
     JSON_DECREF(priv->jn_alias_list)
+    GBUF_DECREF(priv->gbuf_will_payload);
 
     dl_flush(&priv->dl_msgs_in, db_free_client_msg);
     dl_flush(&priv->dl_msgs_out, db_free_client_msg);
@@ -4836,7 +4837,7 @@ PRIVATE int XXX_sub__messages_queue(
     GBUFFER *gbuf_message = gbuf_create(stored->payloadlen, stored->payloadlen, 0, 0);
     if(gbuf_message) {
         if(stored->payloadlen > 0) {
-            // Can became without payload
+            // Can become without payload
             gbuf_append(gbuf_message, stored->payload, stored->payloadlen);
         }
         json_t *kw = json_pack("{s:s, s:s, s:I}",
@@ -5101,6 +5102,7 @@ PRIVATE int will_read(
         return ret;
     }
     if(payloadlen > 0) {
+        GBUF_DECREF(priv->gbuf_will_payload);
         priv->gbuf_will_payload = gbuf_create(payloadlen, payloadlen, 0, 0);
         if(!priv->gbuf_will_payload) {
             // Error already logged
